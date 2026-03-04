@@ -1,0 +1,206 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+.settings-wrapper {
+  padding: 32px 40px;
+  background: #efefef;
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
+  color: #000;
+}
+
+/* ===== Header ===== */
+
+.settings-header {
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  opacity: 0.6;
+  margin: 0;
+}
+
+/* ===== Layout ===== */
+
+.settings-grid-layout {
+  display: grid;
+  gap: 18px;
+  max-width: 780px; /* keeps it compact like screenshot */
+}
+
+/* ===== Cards ===== */
+
+.settings-card {
+  background: #fff;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  padding: 18px 20px; /* smaller padding */
+  display: flex;
+  flex-direction: column;
+  gap: 14px; /* tighter spacing */
+}
+
+/* ===== Section Titles ===== */
+
+.card-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #000;
+  opacity: 0.6;
+  margin: 0;
+}
+
+/* ===== Field Groups ===== */
+
+.fields-row {
+  display: grid;
+  gap: 14px;
+}
+
+.fields-row-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.fields-row-3 {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* ===== Fields ===== */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #000;
+}
+
+/* ===== Inputs ===== */
+
+input,
+textarea {
+  width: 100%;
+  padding: 7px 10px; /* SMALLER */
+  border-radius: 4px;
+  border: 1px solid #d6d6d6;
+  background: #f9f9f9;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  color: #000;
+  transition: border-color 0.15s ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #999;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #000;
+  background: #fff;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+/* ===== Accordion ===== */
+
+.card-bank {
+  padding: 0;
+  overflow: hidden;
+}
+
+.accordion-trigger {
+  padding: 14px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.accordion-chevron {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.card-bank.open .accordion-chevron {
+  transform: rotate(180deg);
+}
+
+.accordion-body {
+  padding: 0 20px 18px;
+  border-top: 1px solid #eee;
+}
+
+/* ===== Logo Upload ===== */
+
+.logo-upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #d6d6d6;
+  background: #e9e9e9;
+  cursor: pointer;
+}
+
+.upload-btn:hover {
+  background: #dedede;
+}
+
+.upload-btn input {
+  display: none;
+}
+
+.logo-preview {
+  max-width: 320px;
+  max-height: 180px;
+  border: 1px dashed #d6d6d6;
+  padding: 16px;
+  border-radius: 4px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-preview img {
+  max-width: 100%;
+  max-height: 140px;
+  object-fit: contain;
+  display: block;
+}
+
+/* ===== Responsive ===== */
+
+@media (max-width: 700px) {
+  .fields-row-2,
+  .fields-row-3 {
+    grid-template-columns: 1fr;
+  }
+}
