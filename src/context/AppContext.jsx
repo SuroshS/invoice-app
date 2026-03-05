@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import logo from "../assets/logo.png";
 
 const AppContext = createContext();
 
@@ -6,14 +7,14 @@ const STORAGE_KEY = "invoice_app_v1";
 
 const defaultData = {
   settings: {
-    businessName: "",
-    abn: "",
-    qbcc: "",
+    businessName: "COAT&CURE PTY LTD",
+    abn: "34695334742",
+    qbcc: "15576833",
     address: "",
-    bankName: "",
-    bsb: "",
-    accountNumber: "",
-    logoDataUrl: "",
+    bankName: "Ahmad Hussain Nazari Ibrahim",
+    bsb: "064236",
+    accountNumber: "10130392",
+    logoDataUrl: logo,
     invoicePrefix: "INV-",
     nextInvoiceNumber: 1,
   },
@@ -21,12 +22,11 @@ const defaultData = {
 };
 
 export function AppProvider({ children }) {
-  const [data, setData] = useState(defaultData);
 
-  useEffect(() => {
+  const [data, setData] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setData(JSON.parse(saved));
-  }, []);
+    return saved ? JSON.parse(saved) : defaultData;
+  });
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

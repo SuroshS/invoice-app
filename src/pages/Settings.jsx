@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import "./Settings.css";
+import logo from "../assets/logo.png";
 
 function Field({ label, children }) {
   return (
@@ -13,13 +14,40 @@ function Field({ label, children }) {
 
 export default function Settings() {
   const { data, setData } = useApp();
+
+  const defaultSettings = {
+    businessName: "COAT&CURE PTY LTD",
+    abn: "34695334742",
+    qbcc: "15576833",
+    address: "",
+    bsb: "064236",
+    accountNumber: "10130392",
+    bankName: "Ahmad Hussain Nazari Ibrahim",
+    invoicePrefix: "INV-",
+    nextInvoiceNumber: 1,
+    logoDataUrl: logo,
+  };
+
   const settings = data?.settings || {};
+
   const [bankOpen, setBankOpen] = useState(false);
+
+  useEffect(() => {
+    if (!data?.settings || Object.keys(data.settings).length === 0) {
+      setData(prev => ({
+        ...prev,
+        settings: defaultSettings,
+      }));
+    }
+  }, []);
 
   function update(field, value) {
     setData(prev => ({
       ...prev,
-      settings: { ...prev.settings, [field]: value },
+      settings: {
+        ...prev.settings,
+        [field]: value,
+      },
     }));
   }
 
@@ -54,6 +82,7 @@ export default function Settings() {
           <p className="card-title">Business Information</p>
 
           <div className="fields-row fields-row-3">
+
             <Field label="Business Name">
               <input
                 value={settings.businessName || ""}
@@ -74,6 +103,7 @@ export default function Settings() {
                 onChange={e => update("qbcc", e.target.value)}
               />
             </Field>
+
           </div>
 
           <Field label="Business Address">
@@ -82,10 +112,12 @@ export default function Settings() {
               onChange={e => update("address", e.target.value)}
             />
           </Field>
+
         </div>
 
         {/* Bank */}
         <div className={`settings-card card-bank ${bankOpen ? "open" : ""}`}>
+
           <div
             className="accordion-trigger"
             onClick={() => setBankOpen(prev => !prev)}
@@ -98,7 +130,9 @@ export default function Settings() {
 
           {bankOpen && (
             <div className="accordion-body">
+
               <div className="fields-row fields-row-2">
+
                 <Field label="BSB">
                   <input
                     inputMode="numeric"
@@ -119,6 +153,7 @@ export default function Settings() {
                     }
                   />
                 </Field>
+
               </div>
 
               <Field label="Bank Name">
@@ -127,15 +162,19 @@ export default function Settings() {
                   onChange={e => update("bankName", e.target.value)}
                 />
               </Field>
+
             </div>
           )}
+
         </div>
 
         {/* Invoice */}
         <div className="settings-card">
+
           <p className="card-title">Invoicing</p>
 
           <div className="fields-row fields-row-2">
+
             <Field label="Invoice Prefix">
               <input
                 value={settings.invoicePrefix || ""}
@@ -147,17 +186,23 @@ export default function Settings() {
               <input
                 type="number"
                 min={1}
-                value={settings.nextInvoiceNumber ?? 1}
+                value={settings.nextInvoiceNumber || 1}
                 onChange={e =>
                   update("nextInvoiceNumber", Number(e.target.value))
                 }
               />
             </Field>
+
           </div>
+
         </div>
 
         {/* Branding */}
-        <div className="settings-card branding-card" style={{ gridColumn: "1 / -1" }}>
+        <div
+          className="settings-card branding-card"
+          style={{ gridColumn: "1 / -1" }}
+        >
+
           <p className="card-title">Branding</p>
 
           <div className="logo-upload">
@@ -182,9 +227,11 @@ export default function Settings() {
             )}
 
           </div>
+
         </div>
 
       </div>
+
     </div>
   );
 }
