@@ -9,23 +9,24 @@ export default function CreateInvoice() {
   const { settings } = data;
 
   const [invoice, setInvoice] = useState({
-  invoiceNumber: `${settings.invoicePrefix}${settings.nextInvoiceNumber}`,
-  date: new Date().toISOString().slice(0, 10),
-  billToName: "",
-  billToAddress: "",
-  billToEmail: "",
-  gstRate: 0.1,
-  status: "Unpaid",
-  notes: "",   // ✅ ADD THIS LINE
-  items: [{ description: "", qty: 1, rate: 0 }]
-});
+    invoiceNumber: `${settings.invoicePrefix}${settings.nextInvoiceNumber}`,
+    date: new Date().toISOString().slice(0, 10),
+    billToName: "",
+    billToAddress: "",
+    billToEmail: "",
+    gstEnabled: true,
+    gstRate: 0.1,
+    status: "Unpaid",
+    notes: "",
+    items: [{ description: "", qty: 1, rate: 0 }]
+  });
 
   const totals = useMemo(() => {
     const subtotal = invoice.items.reduce(
       (acc, item) => acc + item.qty * item.rate,
       0
     );
-    const gst = subtotal * invoice.gstRate;
+    const gst = invoice.gstEnabled ? subtotal * invoice.gstRate : 0;
     return { subtotal, gst, total: subtotal + gst };
   }, [invoice]);
 
@@ -42,7 +43,7 @@ export default function CreateInvoice() {
   function addItem() {
     setInvoice(prev => ({
       ...prev,
-      items: [...prev.items, { description: "", qty: 1, amount: 0 }]
+      items: [...prev.items, { description: "", qty: 1, rate: 0 }]
     }));
   }
 
@@ -91,9 +92,7 @@ export default function CreateInvoice() {
           {["Unpaid", "Paid"].map(status => (
             <button
               key={status}
-              className={`status ${
-                invoice.status === status ? "active" : ""
-              }`}
+              className={`status ${invoice.status === status ? "active" : ""}`}
               onClick={() => changeStatus(status)}
             >
               {status}
@@ -149,9 +148,7 @@ export default function CreateInvoice() {
           <div key={i} className="line-row">
             <input
               value={item.description}
-              onChange={e =>
-                updateItem(i, "description", e.target.value)
-              }
+              onChange={e => updateItem(i, "description", e.target.value)}
             />
 
             <input
@@ -159,9 +156,7 @@ export default function CreateInvoice() {
               inputMode="numeric"
               className="no-spinner"
               value={item.qty}
-              onChange={e =>
-                updateItem(i, "qty", Number(e.target.value))
-              }
+              onChange={e => updateItem(i, "qty", Number(e.target.value))}
             />
 
             <input
@@ -169,7 +164,7 @@ export default function CreateInvoice() {
               inputMode="numeric"
               className="no-spinner"
               value={item.rate}
-onChange={e => updateItem(i, "rate", Number(e.target.value))}
+              onChange={e => updateItem(i, "rate", Number(e.target.value))}
             />
 
             <div className="line-total">
@@ -199,8 +194,16 @@ onChange={e => updateItem(i, "rate", Number(e.target.value))}
           <span>${totals.subtotal.toFixed(2)}</span>
         </div>
 
-        <div className="total-row">
-          <span>GST (10%)</span>
+        <div className="total-row gst-row">
+          <span className="gst-label">
+            GST (10%)
+            <button
+              className={`gst-toggle ${invoice.gstEnabled ? "active" : ""}`}
+              onClick={() => update("gstEnabled", !invoice.gstEnabled)}
+            >
+              {invoice.gstEnabled ? "On" : "Off"}
+            </button>
+          </span>
           <span>${totals.gst.toFixed(2)}</span>
         </div>
 
@@ -211,14 +214,14 @@ onChange={e => updateItem(i, "rate", Number(e.target.value))}
       </div>
 
       {/* Notes */}
-<div className="invoice-section">
-  <p className="section-title">Notes</p>
-  <textarea
-    value={invoice.notes}
-    onChange={e => update("notes", e.target.value)}
-    placeholder="Payment terms, additional info..."
-  />
-</div>
+      <div className="invoice-section">
+        <p className="section-title">Notes</p>
+        <textarea
+          value={invoice.notes}
+          onChange={e => update("notes", e.target.value)}
+          placeholder="Payment terms, additional info..."
+        />
+      </div>
 
     </div>
   );
