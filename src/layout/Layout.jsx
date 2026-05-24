@@ -1,8 +1,11 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useApp } from "../context/AppContext";
 
 export default function Layout() {
-  const { signOut, user } = useApp();
+
+  function handleSignOut() {
+    sessionStorage.removeItem("app_unlocked");
+    window.location.reload();
+  }
 
   return (
     <div style={styles.container}>
@@ -31,8 +34,7 @@ export default function Layout() {
         <div style={styles.spacer} />
 
         <div style={styles.userSection}>
-          <span style={styles.userEmail}>{user?.email}</span>
-          <button style={styles.signOutBtn} onClick={signOut}>Sign out</button>
+          <button style={styles.signOutBtn} onClick={handleSignOut}>Sign out</button>
         </div>
       </aside>
 
@@ -84,16 +86,6 @@ const styles = {
   userSection: {
     borderTop: "1px solid #2a2a2a",
     paddingTop: 16,
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  userEmail: {
-    fontSize: "0.72rem",
-    color: "#666",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
   },
   signOutBtn: {
     background: "none",
@@ -104,7 +96,9 @@ const styles = {
     fontSize: "0.8rem",
     cursor: "pointer",
     textAlign: "left",
+    width: "100%",
     transition: "all 0.15s",
+    fontFamily: "system-ui",
   },
   main: {
     flex: 1,
