@@ -1,71 +1,106 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-import logo from "../assets/logo.png";
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from "../lib/supabase";
 
 const AppContext = createContext();
 
-const ANON_USER_ID = "00000000-0000-0000-0000-000000000001";
-
 const defaultSettings = {
-  businessName: "COAT&CURE PTY LTD",
-  abn: "34695334742",
-  qbcc: "15576833",
+  businessName: "",
+  abn: "",
+  qbcc: "",
   address: "",
-  bankName: "Ahmad Hussain Nazari Ibrahim",
-  bsb: "064236",
-  accountNumber: "10130392",
-  logoDataUrl: logo,
+  bankName: "",
+  bsb: "",
+  accountNumber: "",
+  logoUrl: null,
   invoicePrefix: "INV-",
   quotePrefix: "QUO-",
   nextInvoiceNumber: 1,
   nextQuoteNumber: 1,
 };
 
+function getCurrentUser() {
+  try {
+    const stored = sessionStorage.getItem("app_user");
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AppProvider({ children }) {
   const [dataLoading, setDataLoading] = useState(true);
-  const [data, setDataState] = useState({
-    settings: defaultSettings,
-    invoices: [],
-  });
+  const [data, setDataState] = useState({ settings: defaultSettings, invoices: [] });
 
+  // Track userId in state so changes trigger re-renders and useEffect
+  const [userId, setUserId] = useState(() => getCurrentUser()?.userId ?? null);
+
+  // Poll sessionStorage for login — catches when AuthGate sets the session
   useEffect(() => {
-    loadData();
+    function checkSession() {
+      const user = getCurrentUser();
+      const id = user?.userId ?? null;
+      setUserId(prev => prev !== id ? id : prev);
+    }
+
+    // Check immediately and on storage events
+    checkSession();
+    window.addEventListener("storage", checkSession);
+    return () => window.removeEventListener("storage", checkSession);
   }, []);
 
-  async function loadData() {
+  useEffect(() => {
+    if (userId) {
+      loadData(userId);
+    } else {
+      setDataLoading(false);
+    }
+  }, [userId]);
+
+  async function loadData(id) {
     setDataLoading(true);
-    const [{ data: settingsRow }, { data: invoiceRows }] = await Promise.all([
-      supabase.from("settings").select("data").eq("user_id", ANON_USER_ID).single(),
-      supabase.from("invoices").select("data, id, created_at").eq("user_id", ANON_USER_ID).order("created_at", { ascending: true }),
-    ]);
-    setDataState({
-      settings: settingsRow?.data ?? defaultSettings,
-      invoices: invoiceRows?.map(r => ({ ...r.data, _id: r.id })) ?? [],
-    });
+    try {
+      const [{ data: settingsRow }, { data: invoiceRows }] = await Promise.all([
+        supabase.from("settings").select("data").eq("user_id", id).single(),
+        supabase.from("invoices").select("data, id, created_at").eq("user_id", id).order("created_at", { ascending: true }),
+      ]);
+      setDataState({
+        settings: settingsRow?.data ?? defaultSettings,
+        invoices: invoiceRows?.map(r => ({ ...r.data, _id: r.id })) ?? [],
+      });
+    } catch (e) {
+      console.error("Load data error:", e);
+      setDataState({ settings: defaultSettings, invoices: [] });
+    }
     setDataLoading(false);
   }
 
   async function setData(updaterOrValue) {
     setDataState(prev => {
       const next = typeof updaterOrValue === "function" ? updaterOrValue(prev) : updaterOrValue;
-      if (next.settings !== prev.settings) {
+      if (next.settings !== prev.settings && userId) {
         supabase
           .from("settings")
-          .upsert({ user_id: ANON_USER_ID, data: next.settings, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+          .upsert({ user_id: userId, data: next.settings, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
           .then(({ error }) => { if (error) console.error("Settings save error:", error); });
       }
       return next;
     });
   }
 
-  async function saveInvoice(invoice, totals, pdfBase64 = null) {
-    const isQuote = invoice.type === "Quote";
+  async function uploadLogo(file) {
+    const ext = file.name.split(".").pop();
+    const path = `${userId}/logo.${ext}`;
+    const { error } = await supabase.storage
+      .from("logos")
+      .upload(path, file, { upsert: true });
+    if (error) { console.error("Logo upload error:", error); return null; }
+    const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+    return urlData.publicUrl;
+  }
 
+  async function saveInvoice(invoice, totals, pdfBase64 = null) {
+    if (!userId) return;
+    const isQuote = invoice.type === "Quote";
     const invoiceRecord = {
       ...invoice,
       total: totals.total,
@@ -74,7 +109,6 @@ export function AppProvider({ children }) {
       savedAt: new Date().toISOString(),
       ...(pdfBase64 ? { pdfBase64 } : {}),
     };
-
     const updatedSettings = {
       ...data.settings,
       nextInvoiceNumber: isQuote ? data.settings.nextInvoiceNumber : data.settings.nextInvoiceNumber + 1,
@@ -89,7 +123,7 @@ export function AppProvider({ children }) {
 
     const { data: inserted, error: invoiceError } = await supabase
       .from("invoices")
-      .insert({ user_id: ANON_USER_ID, data: invoiceRecord })
+      .insert({ user_id: userId, data: invoiceRecord })
       .select("id")
       .single();
 
@@ -106,8 +140,7 @@ export function AppProvider({ children }) {
 
     const { error: settingsError } = await supabase
       .from("settings")
-      .upsert({ user_id: ANON_USER_ID, data: updatedSettings, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-
+      .upsert({ user_id: userId, data: updatedSettings, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
     if (settingsError) console.error("Settings update error:", settingsError);
   }
 
@@ -132,11 +165,7 @@ export function AppProvider({ children }) {
   }
 
   return (
-    <AppContext.Provider value={{
-      data, setData,
-      saveInvoice, deleteInvoice,
-      dataLoading,
-    }}>
+    <AppContext.Provider value={{ data, setData, saveInvoice, deleteInvoice, uploadLogo, dataLoading }}>
       {children}
     </AppContext.Provider>
   );

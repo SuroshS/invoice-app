@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import { pdf } from "@react-pdf/renderer";
 import InvoicePDF from "./InvoicePDF";
@@ -23,6 +23,30 @@ function blankForm(type) {
     notes: "",
     items: [{ description: "", qty: 1, rate: 0 }],
   };
+}
+
+// Auto-growing textarea component
+function AutoTextarea({ value, onChange, placeholder }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = "auto";
+      ref.current.style.height = ref.current.scrollHeight + "px";
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      className="description-textarea"
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      rows={1}
+      style={{ overflow: "hidden" }}
+    />
+  );
 }
 
 export default function CreateInvoice() {
@@ -73,12 +97,10 @@ export default function CreateInvoice() {
     const invoice = { ...form, invoiceNumber };
 
     try {
-      // Generate PDF blob
       const blob = await pdf(
         <InvoicePDF invoice={invoice} settings={settings} totals={totals} />
       ).toBlob();
 
-      // Convert blob to base64 so we can store and re-download later
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(",")[1]);
@@ -86,10 +108,8 @@ export default function CreateInvoice() {
         reader.readAsDataURL(blob);
       });
 
-      // Save invoice with base64 PDF attached
       saveInvoice(invoice, totals, base64);
 
-      // Trigger download
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -99,11 +119,9 @@ export default function CreateInvoice() {
 
     } catch (e) {
       console.error("PDF export error:", e);
-      // Save without PDF if generation fails
       saveInvoice(invoice, totals, null);
     }
 
-    // Reset form
     setForm(blankForm(type));
   }
 
@@ -172,29 +190,32 @@ export default function CreateInvoice() {
           <span></span>
         </div>
         {form.items.map((item, i) => (
-          <div key={i} className="line-row">
-            <input
+          <div key={i} className="line-row-multiline">
+            <AutoTextarea
               value={item.description}
               onChange={e => updateItem(i, "description", e.target.value)}
+              placeholder="Description"
             />
-            <input
-              type="number"
-              inputMode="numeric"
-              className="no-spinner"
-              value={item.qty}
-              onChange={e => updateItem(i, "qty", Number(e.target.value))}
-            />
-            <input
-              type="number"
-              inputMode="numeric"
-              className="no-spinner"
-              value={item.rate}
-              onChange={e => updateItem(i, "rate", Number(e.target.value))}
-            />
-            <div className="line-total">${(item.qty * item.rate).toFixed(2)}</div>
-            {form.items.length > 1 && (
-              <button className="delete-btn" onClick={() => removeItem(i)}>✕</button>
-            )}
+            <div className="line-row-right">
+              <input
+                type="number"
+                inputMode="numeric"
+                className="no-spinner"
+                value={item.qty}
+                onChange={e => updateItem(i, "qty", Number(e.target.value))}
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                className="no-spinner"
+                value={item.rate}
+                onChange={e => updateItem(i, "rate", Number(e.target.value))}
+              />
+              <div className="line-total">${(item.qty * item.rate).toFixed(2)}</div>
+              {form.items.length > 1 && (
+                <button className="delete-btn" onClick={() => removeItem(i)}>✕</button>
+              )}
+            </div>
           </div>
         ))}
         <button className="add-btn" onClick={addItem}>+ Add Item</button>
