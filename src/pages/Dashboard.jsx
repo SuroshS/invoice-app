@@ -24,21 +24,29 @@ const styles = `
 .btn-light { background: #f0f0f0; color: #444; }
 .btn-light:hover { background: #e5e5e5; }
 
+/* Hero — coloured boxes */
 .hero {
-  background: #111;
-  border-radius: 14px;
   display: grid;
-  grid-template-columns: 1fr 1px 1fr 1px 1fr 1px 1fr;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
   margin-bottom: 1rem;
-  overflow: hidden;
 }
-.hero-divider { background: #222; margin: 1.5rem 0; }
-.hero-item { padding: 1.6rem 1.75rem; }
-.hero-label { font-size: 0.68rem; color: #666; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 500; margin-bottom: 0.5rem; }
+
+.hero-item {
+  border-radius: 14px;
+  padding: 1.5rem 1.75rem;
+}
+
+.hero-item.h1 { background: #1a1a2e; }
+.hero-item.h2 { background: #16213e; }
+.hero-item.h3 { background: #0f3460; }
+.hero-item.h4 { background: #533483; }
+
+.hero-label { font-size: 0.68rem; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 500; margin-bottom: 0.5rem; }
 .hero-value { font-size: 1.5rem; font-weight: 600; color: #fff; line-height: 1; margin-bottom: 0.375rem; }
-.hero-sub { font-size: 0.68rem; color: #555; }
+.hero-sub { font-size: 0.68rem; color: rgba(255,255,255,0.35); }
 .hero-up { color: #34c77b; }
-.hero-down { color: #f56565; }
+.hero-down { color: #f87171; }
 
 .tiles {
   display: grid;
@@ -52,13 +60,12 @@ const styles = `
 .tile-sub { font-size: 0.68rem; color: #ccc; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
-.grid-3 { display: grid; grid-template-columns: 1.2fr 1fr 0.85fr; gap: 1rem; }
+.grid-2-3 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 1rem; }
 
 @media (max-width: 720px) {
   .hero { grid-template-columns: 1fr 1fr; }
-  .hero-divider { display: none; }
   .tiles { grid-template-columns: repeat(3, 1fr); }
-  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-2, .grid-2-3 { grid-template-columns: 1fr; }
 }
 
 .panel { background: #fff; border: 1px solid #ebebeb; border-radius: 12px; padding: 1.4rem 1.5rem; }
@@ -112,10 +119,6 @@ const styles = `
 .c-prog { height: 3px; background: #f0f0f0; border-radius: 99px; overflow: hidden; margin-top: 3px; }
 .c-prog-fill { height: 100%; background: #111; border-radius: 99px; }
 .c-total { font-size: 0.82rem; font-weight: 600; color: #111; flex-shrink: 0; }
-
-.meter-track { height: 5px; background: #f0f0f0; border-radius: 99px; overflow: hidden; margin: 8px 0 6px; }
-.meter-fill { height: 100%; background: #111; border-radius: 99px; }
-.meter-labels { display: flex; justify-content: space-between; font-size: 0.65rem; color: #bbb; }
 
 .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f5f5f5; }
 .stat-row:last-child { border-bottom: none; }
@@ -171,16 +174,12 @@ export default function Dashboard() {
       .sort((a, b) => new Date(b.savedAt || b.date) - new Date(a.savedAt || a.date))
       .slice(0, 7);
 
-    const conversionRate = (allInvoices.length + quotes.length) > 0
-      ? Math.round((allInvoices.length / (allInvoices.length + quotes.length)) * 100)
-      : 0;
-
     const busiestMonth = [...months].sort((a, b) => b.revenue - a.revenue)[0];
 
     return {
       totalRevenue, avgValue, biggestJob, thisMonth, lastMonth, monthDiff,
       thisYearRevenue, invoiceCount: allInvoices.length, quoteCount: quotes.length,
-      clientCount: topClients.length, conversionRate, months, topClients,
+      clientCount: topClients.length, months, topClients,
       maxClientTotal, recent, busiestMonth,
     };
   }, [invoices]);
@@ -205,7 +204,7 @@ export default function Dashboard() {
 
         <div className="dash-header">
           <div>
-            <p className="dash-title">{data.settings.businessName}</p>
+            <p className="dash-title">{data.settings.businessName || "Dashboard"}</p>
             <p className="dash-subtitle">{today}</p>
           </div>
           <div className="dash-actions">
@@ -214,14 +213,14 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Coloured hero boxes */}
         <div className="hero">
-          <div className="hero-item">
+          <div className="hero-item h1">
             <div className="hero-label">Total revenue</div>
             <div className="hero-value">${fmt(stats.totalRevenue)}</div>
             <div className="hero-sub">{stats.invoiceCount} invoice{stats.invoiceCount !== 1 ? "s" : ""} all time</div>
           </div>
-          <div className="hero-divider" />
-          <div className="hero-item">
+          <div className="hero-item h2">
             <div className="hero-label">This month</div>
             <div className="hero-value">${fmt(stats.thisMonth)}</div>
             <div className="hero-sub">
@@ -230,14 +229,12 @@ export default function Dashboard() {
                 : "No prior data"}
             </div>
           </div>
-          <div className="hero-divider" />
-          <div className="hero-item">
+          <div className="hero-item h3">
             <div className="hero-label">This year</div>
             <div className="hero-value">${fmt(stats.thisYearRevenue)}</div>
             <div className="hero-sub">{new Date().getFullYear()} total</div>
           </div>
-          <div className="hero-divider" />
-          <div className="hero-item">
+          <div className="hero-item h4">
             <div className="hero-label">Avg invoice</div>
             <div className="hero-value">${fmt(stats.avgValue)}</div>
             <div className="hero-sub">per invoice</div>
@@ -311,7 +308,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid-3">
+        <div className="grid-2-3">
 
           <div className="panel">
             <div className="panel-label">
@@ -342,33 +339,27 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div className="panel">
-            <div className="panel-label">Top clients</div>
-            {stats.topClients.length === 0 ? (
-              <p className="empty">No clients yet.</p>
-            ) : (
-              <div>
-                {stats.topClients.map((c, i) => (
-                  <div key={i} className="client-row">
-                    <span className="c-rank">{i + 1}</span>
-                    <div className="c-info">
-                      <span className="c-name">{c.name}</span>
-                      <span className="c-sub">{c.count} invoice{c.count !== 1 ? "s" : ""}</span>
-                      <div className="c-prog"><div className="c-prog-fill" style={{ width: `${(c.total / stats.maxClientTotal) * 100}%` }} /></div>
-                    </div>
-                    <span className="c-total">${fmt(c.total)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+
             <div className="panel">
-              <div className="panel-label">Quote conversion</div>
-              <div style={{ fontSize: "1.5rem", fontWeight: 600, color: "#111", lineHeight: 1, marginBottom: 6 }}>{stats.conversionRate}%</div>
-              <div className="meter-track"><div className="meter-fill" style={{ width: `${stats.conversionRate}%` }} /></div>
-              <div className="meter-labels"><span>{stats.quoteCount} quotes</span><span>{stats.invoiceCount} invoices</span></div>
+              <div className="panel-label">Top clients</div>
+              {stats.topClients.length === 0 ? (
+                <p className="empty">No clients yet.</p>
+              ) : (
+                <div>
+                  {stats.topClients.map((c, i) => (
+                    <div key={i} className="client-row">
+                      <span className="c-rank">{i + 1}</span>
+                      <div className="c-info">
+                        <span className="c-name">{c.name}</span>
+                        <span className="c-sub">{c.count} invoice{c.count !== 1 ? "s" : ""}</span>
+                        <div className="c-prog"><div className="c-prog-fill" style={{ width: `${(c.total / stats.maxClientTotal) * 100}%` }} /></div>
+                      </div>
+                      <span className="c-total">${fmt(c.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="panel">
@@ -386,6 +377,7 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+
           </div>
 
         </div>
