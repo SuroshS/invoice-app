@@ -18,42 +18,44 @@ const defaultSettings = {
   nextQuoteNumber: 1,
 };
 
-function getCurrentUser() {
-  try {
-    const stored = sessionStorage.getItem("app_user");
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
 export function AppProvider({ children }) {
   const [dataLoading, setDataLoading] = useState(true);
   const [data, setDataState] = useState({ settings: defaultSettings, invoices: [] });
+  const [userId, setUserId] = useState(null);
+  const [daysLeft, setDaysLeft] = useState(14);
 
-  // Track userId in state so changes trigger re-renders and useEffect
-  const [userId, setUserId] = useState(() => getCurrentUser()?.userId ?? null);
-
-  // Poll sessionStorage for login — catches when AuthGate sets the session
   useEffect(() => {
-    function checkSession() {
-      const user = getCurrentUser();
-      const id = user?.userId ?? null;
-      setUserId(prev => prev !== id ? id : prev);
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUserId(session.user.id);
+        computeDaysLeft(session.user);
+      } else {
+        setDataLoading(false);
+      }
+    });
 
-    // Check immediately and on storage events
-    checkSession();
-    window.addEventListener("storage", checkSession);
-    return () => window.removeEventListener("storage", checkSession);
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      if (session?.user) computeDaysLeft(session.user);
+      if (!uid) {
+        setDataState({ settings: defaultSettings, invoices: [] });
+        setDataLoading(false);
+      }
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
+  function computeDaysLeft(user) {
+    const createdAt = new Date(user.created_at);
+    const now = new Date();
+    const diffDays = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
+    setDaysLeft(Math.max(0, 14 - diffDays));
+  }
+
   useEffect(() => {
-    if (userId) {
-      loadData(userId);
-    } else {
-      setDataLoading(false);
-    }
+    if (userId) loadData(userId);
   }, [userId]);
 
   async function loadData(id) {
@@ -90,9 +92,7 @@ export function AppProvider({ children }) {
   async function uploadLogo(file) {
     const ext = file.name.split(".").pop();
     const path = `${userId}/logo.${ext}`;
-    const { error } = await supabase.storage
-      .from("logos")
-      .upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
     if (error) { console.error("Logo upload error:", error); return null; }
     const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
     return urlData.publicUrl;
@@ -156,6 +156,12 @@ export function AppProvider({ children }) {
     }));
   }
 
+  async function signOut() {
+    await supabase.auth.signOut();
+    setDataState({ settings: defaultSettings, invoices: [] });
+    setUserId(null);
+  }
+
   if (dataLoading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f7f7f7" }}>
@@ -165,7 +171,13 @@ export function AppProvider({ children }) {
   }
 
   return (
-    <AppContext.Provider value={{ data, setData, saveInvoice, deleteInvoice, uploadLogo, dataLoading }}>
+    <AppContext.Provider value={{
+      data, setData,
+      saveInvoice, deleteInvoice,
+      uploadLogo, signOut,
+      userId, daysLeft,
+      dataLoading,
+    }}>
       {children}
     </AppContext.Provider>
   );
