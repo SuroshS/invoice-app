@@ -3,19 +3,26 @@ import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 
 const styles = `
-.dash {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 2.5rem 2rem;
-  font-family: system-ui, sans-serif;
+.dash,
+.dash * {
   box-sizing: border-box;
+  min-width: 0;
+}
+
+.dash {
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  font-family: system-ui, sans-serif;
+  overflow-x: hidden;
 }
 
 .dash-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   gap: 1rem;
 }
 
@@ -38,7 +45,7 @@ const styles = `
   flex-shrink: 0;
 }
 
-.btn {
+.dash-btn {
   padding: 0.55rem 1.1rem;
   border-radius: 8px;
   font-size: 0.85rem;
@@ -49,25 +56,24 @@ const styles = `
   white-space: nowrap;
 }
 
-.btn-dark {
+.dash-btn-dark {
   background: #111;
   color: #fff;
 }
 
-.btn-dark:hover {
+.dash-btn-dark:hover {
   background: #333;
 }
 
-.btn-light {
+.dash-btn-light {
   background: #f0f0f0;
   color: #444;
 }
 
-.btn-light:hover {
+.dash-btn-light:hover {
   background: #e5e5e5;
 }
 
-/* WELCOME SCREEN */
 .welcome-wrap {
   display: flex;
   flex-direction: column;
@@ -133,18 +139,18 @@ const styles = `
   margin-top: 1rem;
 }
 
-/* Hero */
+/* Top revenue cards */
 .hero {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
 
 .hero-item {
   border-radius: 14px;
-  padding: 1.5rem 1.75rem;
-  min-width: 0;
+  padding: 1.3rem 1.4rem;
+  overflow: hidden;
 }
 
 .hero-item.h1 { background: #1a1a2e; }
@@ -162,12 +168,12 @@ const styles = `
 }
 
 .hero-value {
-  font-size: 1.5rem;
+  font-size: clamp(1.05rem, 1.6vw, 1.5rem);
   font-weight: 600;
   color: #fff;
   line-height: 1.1;
   margin-bottom: 0.375rem;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .hero-sub {
@@ -186,7 +192,7 @@ const styles = `
 /* Small stat tiles */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -195,8 +201,8 @@ const styles = `
   background: #fff;
   border: 1px solid #ebebeb;
   border-radius: 12px;
-  padding: 1.1rem 1.25rem 1rem;
-  min-width: 0;
+  padding: 1rem 1.1rem;
+  overflow: hidden;
 }
 
 .tile-label {
@@ -209,12 +215,12 @@ const styles = `
 }
 
 .tile-value {
-  font-size: 1.4rem;
+  font-size: clamp(1.05rem, 1.6vw, 1.4rem);
   font-weight: 600;
   color: #111;
   line-height: 1.1;
   margin-bottom: 0.2rem;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .tile-sub {
@@ -224,14 +230,14 @@ const styles = `
 
 .grid-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1rem;
 }
 
 .grid-2-3 {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -239,8 +245,8 @@ const styles = `
   background: #fff;
   border: 1px solid #ebebeb;
   border-radius: 12px;
-  padding: 1.4rem 1.5rem;
-  min-width: 0;
+  padding: 1.25rem 1.35rem;
+  overflow: hidden;
 }
 
 .panel-label {
@@ -265,12 +271,12 @@ const styles = `
   font-weight: 400;
 }
 
-/* Chart */
 .bars {
   display: flex;
   align-items: flex-end;
   gap: 6px;
   height: 100px;
+  overflow: hidden;
 }
 
 .b-col {
@@ -280,13 +286,16 @@ const styles = `
   align-items: center;
   height: 100%;
   gap: 3px;
-  min-width: 0;
+  overflow: hidden;
 }
 
 .b-amt {
   font-size: 0.58rem;
   color: #ccc;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .b-track {
@@ -316,10 +325,9 @@ const styles = `
   font-weight: 500;
 }
 
-/* Quick actions */
 .qa-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -335,7 +343,7 @@ const styles = `
   font-family: system-ui, sans-serif;
   transition: background 0.12s;
   text-align: left;
-  min-width: 0;
+  overflow: hidden;
 }
 
 .qa-btn:hover {
@@ -369,6 +377,9 @@ const styles = `
   font-weight: 500;
   color: #111;
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .qa-sub {
@@ -376,9 +387,11 @@ const styles = `
   color: #bbb;
   display: block;
   margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Recent activity */
 .feed {
   display: flex;
   flex-direction: column;
@@ -417,7 +430,7 @@ const styles = `
 
 .feed-info {
   flex: 1;
-  min-width: 0;
+  overflow: hidden;
 }
 
 .feed-num {
@@ -425,6 +438,9 @@ const styles = `
   font-weight: 500;
   color: #222;
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .feed-client {
@@ -446,15 +462,16 @@ const styles = `
   font-weight: 600;
   color: #111;
   display: block;
+  white-space: nowrap;
 }
 
 .feed-date {
   font-size: 0.68rem;
   color: #ccc;
   display: block;
+  white-space: nowrap;
 }
 
-/* Top clients */
 .client-row {
   display: flex;
   align-items: center;
@@ -477,7 +494,7 @@ const styles = `
 
 .c-info {
   flex: 1;
-  min-width: 0;
+  overflow: hidden;
 }
 
 .c-name {
@@ -513,6 +530,7 @@ const styles = `
   font-weight: 600;
   color: #111;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .stat-row {
@@ -537,6 +555,7 @@ const styles = `
   font-weight: 600;
   color: #111;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .empty {
@@ -545,18 +564,17 @@ const styles = `
   padding: 0.5rem 0;
 }
 
-/* TABLET */
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .dash {
-    padding: 2rem 1.25rem;
+    padding: 2rem 1rem;
   }
 
   .hero {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .tiles {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .grid-2,
@@ -565,7 +583,6 @@ const styles = `
   }
 }
 
-/* MOBILE ONLY */
 @media (max-width: 640px) {
   .dash {
     padding: 1rem;
@@ -591,13 +608,13 @@ const styles = `
     grid-template-columns: 1fr 1fr;
   }
 
-  .btn {
+  .dash-btn {
     width: 100%;
     padding: 0.7rem 0.85rem;
   }
 
   .hero {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.65rem;
   }
 
@@ -607,7 +624,7 @@ const styles = `
   }
 
   .hero-value {
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
 
   .hero-label {
@@ -619,7 +636,7 @@ const styles = `
   }
 
   .tiles {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.65rem;
   }
 
@@ -628,7 +645,7 @@ const styles = `
   }
 
   .tile-value {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
   }
 
   .unique-clients-tile {
@@ -654,14 +671,6 @@ const styles = `
     font-size: 0.52rem;
   }
 
-  .client-row {
-    gap: 0.6rem;
-  }
-
-  .c-total {
-    font-size: 0.78rem;
-  }
-
   .welcome-wrap {
     min-height: 70vh;
     padding: 1rem;
@@ -681,18 +690,15 @@ const styles = `
   }
 }
 
-/* SMALL MOBILE */
 @media (max-width: 420px) {
-  .hero-value {
-    font-size: 1rem;
-  }
-
+  .hero-value,
   .tile-value {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
   }
 
-  .c-total {
-    font-size: 0.75rem;
+  .hero,
+  .tiles {
+    grid-template-columns: 1fr;
   }
 }
 `;
@@ -848,7 +854,10 @@ export default function Dashboard() {
               good to go.
             </p>
 
-            <button className="welcome-btn" onClick={() => navigate("/settings")}>
+            <button
+              className="welcome-btn"
+              onClick={() => navigate("/settings")}
+            >
               Set up my account →
             </button>
 
@@ -873,11 +882,17 @@ export default function Dashboard() {
           </div>
 
           <div className="dash-actions">
-            <button className="btn btn-light" onClick={() => navigate("/invoices")}>
+            <button
+              className="dash-btn dash-btn-light"
+              onClick={() => navigate("/invoices")}
+            >
               All records
             </button>
 
-            <button className="btn btn-dark" onClick={() => navigate("/create")}>
+            <button
+              className="dash-btn dash-btn-dark"
+              onClick={() => navigate("/create")}
+            >
               + New
             </button>
           </div>
@@ -899,8 +914,8 @@ export default function Dashboard() {
             <div className="hero-sub">
               {stats.monthDiff !== null ? (
                 <span className={stats.monthDiff >= 0 ? "hero-up" : "hero-down"}>
-                  {stats.monthDiff >= 0 ? "↑" : "↓"} {Math.abs(stats.monthDiff)}%{" "}
-                  vs last month
+                  {stats.monthDiff >= 0 ? "↑" : "↓"}{" "}
+                  {Math.abs(stats.monthDiff)}% vs last month
                 </span>
               ) : (
                 "No prior data"
@@ -1040,11 +1055,15 @@ export default function Dashboard() {
 
                       <div className="feed-info">
                         <span className="feed-num">{inv.invoiceNumber}</span>
-                        <span className="feed-client">{inv.billToName || "—"}</span>
+                        <span className="feed-client">
+                          {inv.billToName || "—"}
+                        </span>
                       </div>
 
                       <div className="feed-right">
-                        <span className="feed-amt">${fmt(inv.total || 0)}</span>
+                        <span className="feed-amt">
+                          ${fmt(inv.total || 0)}
+                        </span>
                         <span className="feed-date">
                           {new Date(inv.date).toLocaleDateString("en-AU", {
                             day: "numeric",

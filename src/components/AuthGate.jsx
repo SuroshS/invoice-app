@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import logo from "../assets/forwhitebackgroundlogo.png";
 
 const styles = `
 .auth-wrap {
@@ -18,9 +19,23 @@ const styles = `
   width: 100%;
   max-width: 380px;
 }
-.auth-logo { font-size: 1.1rem; font-weight: 600; color: #111; margin: 0 0 0.25rem; }
-.auth-sub { font-size: 0.8rem; color: #bbb; margin: 0 0 2rem; }
-.auth-field { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+.auth-logo {
+  width: 140px;
+  height: auto;
+  display: block;
+  margin: 0 auto 12px;
+}
+
+.auth-logo-wrap {
+  text-align: center;
+  margin-bottom: 8px;
+}
+.auth-sub {
+  font-size: 0.8rem;
+  color: #bbb;
+  margin: 0 0 2rem;
+  text-align: center;
+}.auth-field { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
 .auth-field label { font-size: 0.75rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
 .auth-field input {
   padding: 0.65rem 0.875rem; border: 1px solid #e5e5e5; border-radius: 8px;
@@ -39,7 +54,19 @@ const styles = `
 .auth-success { background: #f0faf5; color: #2a7a50; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; margin-bottom: 1rem; }
 .auth-toggle { text-align: center; margin-top: 1.25rem; font-size: 0.78rem; color: #bbb; }
 .auth-toggle button { background: none; border: none; color: #111; font-weight: 600; cursor: pointer; font-size: 0.78rem; padding: 0; font-family: system-ui, sans-serif; text-decoration: underline; }
-.trial-badge { display: flex; align-items: center; gap: 8px; background: #f0eefe; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; color: #533483; margin-bottom: 1.5rem; }
+.trial-badge {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  background: #f0eefe;
+  border-radius: 8px;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8rem;
+  color: #533483;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
 .trial-badge span { font-weight: 600; }
 .auth-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f7f7f7; font-family: system-ui, sans-serif; color: #bbb; font-size: 0.875rem; }
 .paywall-wrap { min-height: 100vh; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
@@ -192,12 +219,21 @@ export default function AuthGate({ children }) {
       <style>{styles}</style>
       <div className="auth-wrap">
         <div className="auth-card">
-          <p className="auth-logo">InvoicePro</p>
-          <p className="auth-sub">{mode === "login" ? "Sign in to your account" : "Create your account"}</p>
-
+          <div className="auth-logo-wrap">
+  <img
+    src={logo}
+    alt="PAYVLE"
+    className="auth-logo"
+  />
+</div>
+          <p className="auth-sub">
+  {mode === "login"
+    ? "Sign in to continue"
+    : "Create your account and start invoicing"}
+</p>
           {mode === "signup" && (
             <div className="trial-badge">
-              🎉 <span>14 days free</span> — no credit card required
+               <span>14 days free</span> — no credit card required
             </div>
           )}
 

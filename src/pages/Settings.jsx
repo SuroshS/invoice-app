@@ -295,20 +295,16 @@ export default function Settings() {
   }
 
   async function handleLogoUpload(e) {
-    const file = e.target.files?.[0];
-
-    if (!file) return;
-
-    setLogoUploading(true);
-
-    const url = await uploadLogo(file);
-
-    if (url) {
-      update("logoUrl", url);
-    }
-
-    setLogoUploading(false);
+  const file = e.target.files?.[0];
+  if (!file) return;
+  setLogoUploading(true);
+  const url = await uploadLogo(file);
+  if (url) {
+    const cacheBustedUrl = `${url}?t=${Date.now()}`;
+    update("logoUrl", cacheBustedUrl);
   }
+  setLogoUploading(false);
+}
 
   function numericOnly(value, maxLen) {
     const clean = value.replace(/\D/g, "");

@@ -10,7 +10,7 @@ import {
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 11, fontFamily: "Helvetica" },
   header: { flexDirection: "row", justifyContent: "space-between", marginBottom: 25 },
-  logo: { width: 120, height: 60, objectFit: "contain", marginBottom: 8 },
+  logo: { width: 120, height: 60, objectFit: "contain", marginBottom: 8, alignSelf: "flex-start" },
   businessName: { fontSize: 16, fontWeight: "bold" },
   invoiceTitle: { fontSize: 18, fontWeight: "bold" },
   section: { marginBottom: 15 },
@@ -41,7 +41,7 @@ export default function InvoicePDF({ invoice, settings, totals }) {
 
         {/* HEADER */}
         <View style={styles.header}>
-          <View>
+          <View style={{ alignItems: "flex-start" }}>
             {logoSrc ? <Image style={styles.logo} src={logoSrc} /> : null}
             <Text style={styles.businessName}>{settings.businessName || ""}</Text>
             {settings.abn ? <Text>ABN: {settings.abn}</Text> : null}
@@ -59,7 +59,12 @@ export default function InvoicePDF({ invoice, settings, totals }) {
         <View style={styles.section}>
           <Text style={styles.bold}>{billToLabel}</Text>
           {invoice.billToName ? <Text>{invoice.billToName}</Text> : null}
-          {invoice.billToAddress ? <Text>{invoice.billToAddress}</Text> : null}
+          {invoice.billToAddress ? (
+  <View style={{ marginTop: 4 }}>
+    <Text style={styles.bold}>Address:</Text>
+    <Text>{invoice.billToAddress}</Text>
+  </View>
+) : null}
           {invoice.billToEmail ? <Text>{invoice.billToEmail}</Text> : null}
         </View>
 
@@ -75,21 +80,18 @@ export default function InvoicePDF({ invoice, settings, totals }) {
           const qty = Number(item.qty) || 0;
           const rate = Number(item.rate) || 0;
           const amount = qty * rate;
-          // Split description by newlines
           const lines = (item.description || "").split("\n");
           const firstLine = lines[0] || "";
           const extraLines = lines.slice(1);
 
           return (
             <View key={i} style={styles.row}>
-              {/* Description column — first line inline, extra lines below */}
               <View style={styles.colDesc}>
                 <Text style={styles.descLine}>{firstLine}</Text>
                 {extraLines.map((line, li) => (
                   <Text key={li} style={styles.descSubLine}>{line}</Text>
                 ))}
               </View>
-              {/* Qty, rate, amount always aligned to first line */}
               <Text style={styles.colQty}>{qty}</Text>
               <Text style={styles.colRate}>${rate.toFixed(2)}</Text>
               <Text style={styles.colAmt}>${amount.toFixed(2)}</Text>

@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext";
+import { useNavigate } from "react-router-dom";
 
 const styles = `
+
 .inv-page {
-  max-width: 860px;
+  box-sizing: border-box;
+  max-width: 1000px;
+  width: 100%;
   margin: 0 auto;
   padding: 2rem 1.5rem;
   font-family: system-ui, sans-serif;
+}
+
+.inv-page * {
+  box-sizing: border-box;
 }
 
 .inv-header {
@@ -25,9 +33,29 @@ const styles = `
   margin: 0;
 }
 
+.inv-create-btn {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 8px;
+  border: 1px solid #111;
+  background: #111;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: system-ui;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.inv-create-btn:hover {
+  background: #333;
+  border-color: #333;
+}
+
 .inv-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -39,17 +67,13 @@ const styles = `
   padding: 14px 18px;
 }
 
-.revenue-stat {
-  grid-column: auto;
-}
-
 .inv-stat p {
   font-size: 0.7rem;
   color: #bbb;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 500;
-  margin-bottom: 6px;
+  margin: 0 0 6px;
 }
 
 .inv-stat h2 {
@@ -60,7 +84,6 @@ const styles = `
   margin: 0;
 }
 
-/* Filter/Search */
 .inv-tools {
   display: flex;
   justify-content: space-between;
@@ -76,15 +99,18 @@ const styles = `
 }
 
 .inv-filter-btn {
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 6px;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 8px;
   border: 1px solid #e0e0e0;
   background: #fff;
   color: #333;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
   font-family: system-ui;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 
 .inv-filter-btn:hover {
@@ -101,11 +127,12 @@ const styles = `
 .inv-search {
   width: 100%;
   max-width: 280px;
-  padding: 7px 10px;
-  border-radius: 7px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
   border: 1px solid #e0e0e0;
   background: #fff;
-  font-size: 12px;
+  font-size: 0.82rem;
   color: #333;
   font-family: system-ui;
 }
@@ -120,6 +147,7 @@ const styles = `
   border: 1px solid #ebebeb;
   border-radius: 12px;
   overflow: hidden;
+  width: 100%;
 }
 
 .inv-empty {
@@ -129,8 +157,15 @@ const styles = `
   color: #bbb;
 }
 
+.inv-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .inv-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
 }
 
@@ -144,6 +179,7 @@ const styles = `
   text-align: left;
   border-bottom: 1px solid #f0f0f0;
   background: #fafafa;
+  white-space: nowrap;
 }
 
 .inv-table tbody tr {
@@ -164,6 +200,13 @@ const styles = `
   font-size: 0.85rem;
   color: #333;
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+.inv-client-cell {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .type-badge {
@@ -184,40 +227,24 @@ const styles = `
   color: #5b41c0;
 }
 
-.btn-preview,
-.btn-download {
-  font-size: 12px;
-  padding: 5px 10px;
-  border-radius: 6px;
+.btn-preview {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
   border: 1px solid #e0e0e0;
   background: #fff;
   color: #333;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
   font-family: system-ui;
   transition: all 0.15s;
-  margin-right: 6px;
+  white-space: nowrap;
 }
 
-.btn-preview:hover,
-.btn-download:hover {
+.btn-preview:hover {
   background: #f5f5f5;
   border-color: #bbb;
-}
-
-.btn-delete {
-  font-size: 12px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid #fde0e0;
-  background: #c0392b;
-  color: #fff;
-  cursor: pointer;
-  font-family: system-ui;
-  transition: all 0.15s;
-}
-
-.btn-delete:hover {
-  background: #a93226;
 }
 
 /* Mobile cards */
@@ -289,22 +316,16 @@ const styles = `
 
 .inv-mobile-actions button {
   flex: 1;
-  padding: 8px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 500;
+  height: 34px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
   font-family: system-ui;
   border: 1px solid #e0e0e0;
   background: #fff;
   color: #333;
   transition: all 0.15s;
-}
-
-.inv-mobile-actions .m-delete {
-  border-color: #fde0e0;
-  background: #fff5f5;
-  color: #c0392b;
 }
 
 /* Preview Modal */
@@ -329,6 +350,11 @@ const styles = `
   to { transform: rotate(360deg); }
 }
 
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 .preview-modal {
   background: #fff;
   border-radius: 16px;
@@ -340,11 +366,6 @@ const styles = `
   overflow: hidden;
   box-shadow: 0 24px 60px rgba(0,0,0,0.18);
   animation: slideUp 0.2s ease;
-}
-
-@keyframes slideUp {
-  from { transform: translateY(16px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
 }
 
 .preview-topbar {
@@ -371,6 +392,9 @@ const styles = `
 .preview-modal-meta {
   font-size: 0.75rem;
   color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .preview-topbar-right {
@@ -380,23 +404,52 @@ const styles = `
   flex-shrink: 0;
 }
 
-.preview-dl-btn {
-  padding: 7px 14px;
-  background: #111;
-  color: #fff;
-  border: none;
+.preview-action-btn {
+  height: 34px;
+  padding: 0 13px;
+  background: #fff;
+  color: #333;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
-  font-size: 0.8rem;
-  font-weight: 500;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
   font-family: system-ui;
   white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.preview-action-btn:hover {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.preview-download-btn {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+.preview-download-btn:hover {
+  background: #333;
+  border-color: #333;
+}
+
+.preview-delete-btn {
+  background: #fff5f5;
+  color: #c0392b;
+  border-color: #fde0e0;
+}
+
+.preview-delete-btn:hover {
+  background: #fde8e8;
+  border-color: #f5caca;
 }
 
 .preview-close {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   border: 1px solid #e5e5e5;
   background: #f5f5f5;
   color: #888;
@@ -425,14 +478,91 @@ const styles = `
   box-shadow: 0 1px 8px rgba(0,0,0,0.08);
 }
 
-/* Responsive */
+/* Confirm Delete */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.15s ease;
+}
+
+.confirm-modal {
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+}
+
+.confirm-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111;
+}
+
+.confirm-text {
+  margin: 0 0 18px;
+  font-size: 0.85rem;
+  color: #888;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-cancel,
+.confirm-delete {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: system-ui;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid #e0e0e0;
+}
+
+.confirm-cancel {
+  background: #fff;
+  color: #333;
+}
+
+.confirm-delete {
+  background: #c0392b;
+  color: #fff;
+  border-color: #c0392b;
+}
+
+.confirm-delete:hover {
+  background: #a93226;
+}
+
 @media (max-width: 640px) {
   .inv-page {
     padding: 1rem;
   }
 
+  .inv-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .inv-title {
     font-size: 1rem;
+  }
+
+  .inv-create-btn {
+    width: 100%;
   }
 
   .inv-stats {
@@ -473,7 +603,6 @@ const styles = `
   .inv-search {
     max-width: 100%;
     width: 100%;
-    padding: 9px 10px;
   }
 
   .inv-table-wrap {
@@ -497,30 +626,44 @@ const styles = `
 
   .preview-topbar {
     padding: 14px 16px;
+    align-items: flex-start;
+  }
+
+  .preview-topbar-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .preview-action-btn {
+    height: 32px;
+    padding: 0 11px;
+    font-size: 0.75rem;
   }
 
   .preview-body {
     padding: 12px;
   }
 }
-
-@media (max-width: 400px) {
-  .inv-stats {
-    grid-template-columns: 1fr 1fr;
-  }
-}
 `;
 
 export default function Invoices() {
   const { data, deleteInvoice } = useApp();
+
+const navigate = useNavigate();
+
   const [preview, setPreview] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(null);
   const [pdfPages, setPdfPages] = useState([]);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [filter, setFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function openPreview(invoice) {
+  const invoices = data?.invoices || [];
+
+  async function openPreview(invoice, originalIndex) {
     setPreview(invoice);
+    setPreviewIndex(originalIndex);
     setPdfPages([]);
 
     if (!invoice.pdfBase64) return;
@@ -583,22 +726,24 @@ export default function Invoices() {
 
   function closePreview() {
     setPreview(null);
+    setPreviewIndex(null);
     setPdfPages([]);
     setPdfLoading(false);
+    setConfirmDelete(false);
   }
 
-  const allInvoices = data.invoices.filter(
+  const allInvoices = invoices.filter(
     (i) => i.type === "Invoice" || !i.type
   );
 
-  const quotes = data.invoices.filter((i) => i.type === "Quote");
+  const quotes = invoices.filter((i) => i.type === "Quote");
 
   const totalRevenue = allInvoices.reduce(
     (acc, inv) => acc + (inv.total || 0),
     0
   );
 
-  const sorted = [...data.invoices].sort(
+  const sorted = [...invoices].sort(
     (a, b) => new Date(b.savedAt || b.date) - new Date(a.savedAt || a.date)
   );
 
@@ -631,8 +776,8 @@ export default function Invoices() {
     });
   }
 
-  function downloadPDF(invoice) {
-    if (!invoice.pdfBase64) return;
+  function getPdfBlob(invoice) {
+    if (!invoice?.pdfBase64) return null;
 
     const byteChars = atob(invoice.pdfBase64);
     const byteArray = new Uint8Array(byteChars.length);
@@ -641,9 +786,14 @@ export default function Invoices() {
       byteArray[i] = byteChars.charCodeAt(i);
     }
 
-    const blob = new Blob([byteArray], {
+    return new Blob([byteArray], {
       type: "application/pdf",
     });
+  }
+
+  function downloadPDF(invoice) {
+    const blob = getPdfBlob(invoice);
+    if (!blob) return;
 
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -655,14 +805,51 @@ export default function Invoices() {
     URL.revokeObjectURL(url);
   }
 
-  return (
-    <>
-      <style>{styles}</style>
+  function printPDF(invoice) {
+    const blob = getPdfBlob(invoice);
 
-      <div className="inv-page">
-        <div className="inv-header">
-          <h1 className="inv-title">Invoices & Quotes</h1>
-        </div>
+    if (!blob) {
+      alert("No PDF saved for this invoice. Re-create and export it first.");
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url);
+
+    if (!printWindow) {
+      alert("Pop-up blocked. Please allow pop-ups to print this document.");
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+  }
+
+  function confirmDeleteInvoice() {
+    if (previewIndex === null || previewIndex === undefined) return;
+
+    deleteInvoice(previewIndex);
+    closePreview();
+  }
+
+  return (
+        <>
+          <style>{styles}</style>
+
+          <div className="inv-page">
+            <div className="inv-header">
+  <h1 className="inv-title">Invoices & Quotes</h1>
+
+  <button
+    className="inv-create-btn"
+    onClick={() => navigate("/create")}
+  >
+    + Create
+  </button>
+</div>
 
         <div className="inv-stats">
           <div className="inv-stat">
@@ -703,7 +890,7 @@ export default function Invoices() {
         </div>
 
         <div className="inv-card">
-          {data.invoices.length === 0 ? (
+          {invoices.length === 0 ? (
             <div className="inv-empty">No invoices or quotes yet.</div>
           ) : filtered.length === 0 ? (
             <div className="inv-empty">No matching records found.</div>
@@ -724,7 +911,7 @@ export default function Invoices() {
 
                   <tbody>
                     {filtered.map((invoice) => {
-                      const origIndex = data.invoices.indexOf(invoice);
+                      const origIndex = invoices.indexOf(invoice);
                       const isQuote = invoice.type === "Quote";
 
                       return (
@@ -743,7 +930,9 @@ export default function Invoices() {
                             </span>
                           </td>
 
-                          <td>{invoice.billToName || "—"}</td>
+                          <td className="inv-client-cell">
+                            {invoice.billToName || "—"}
+                          </td>
 
                           <td style={{ color: "#888" }}>
                             {formatDate(invoice.date)}
@@ -756,25 +945,9 @@ export default function Invoices() {
                           <td>
                             <button
                               className="btn-preview"
-                              onClick={() => openPreview(invoice)}
+                              onClick={() => openPreview(invoice, origIndex)}
                             >
                               Preview
-                            </button>
-
-                            {invoice.pdfBase64 && (
-                              <button
-                                className="btn-download"
-                                onClick={() => downloadPDF(invoice)}
-                              >
-                                ↓ Download
-                              </button>
-                            )}
-
-                            <button
-                              className="btn-delete"
-                              onClick={() => deleteInvoice(origIndex)}
-                            >
-                              Delete
                             </button>
                           </td>
                         </tr>
@@ -786,7 +959,7 @@ export default function Invoices() {
 
               <div className="inv-mobile-list">
                 {filtered.map((invoice) => {
-                  const origIndex = data.invoices.indexOf(invoice);
+                  const origIndex = invoices.indexOf(invoice);
                   const isQuote = invoice.type === "Quote";
 
                   return (
@@ -825,21 +998,8 @@ export default function Invoices() {
                       </div>
 
                       <div className="inv-mobile-actions">
-                        <button onClick={() => openPreview(invoice)}>
+                        <button onClick={() => openPreview(invoice, origIndex)}>
                           Preview
-                        </button>
-
-                        {invoice.pdfBase64 && (
-                          <button onClick={() => downloadPDF(invoice)}>
-                            ↓ Download
-                          </button>
-                        )}
-
-                        <button
-                          className="m-delete"
-                          onClick={() => deleteInvoice(origIndex)}
-                        >
-                          Delete
                         </button>
                       </div>
                     </div>
@@ -871,13 +1031,29 @@ export default function Invoices() {
 
               <div className="preview-topbar-right">
                 {preview.pdfBase64 && (
-                  <button
-                    className="preview-dl-btn"
-                    onClick={() => downloadPDF(preview)}
-                  >
-                    ↓ Download PDF
-                  </button>
+                  <>
+                    <button
+                      className="preview-action-btn preview-download-btn"
+                      onClick={() => downloadPDF(preview)}
+                    >
+                      ↓ Download
+                    </button>
+
+                    <button
+                      className="preview-action-btn"
+                      onClick={() => printPDF(preview)}
+                    >
+                      Print
+                    </button>
+                  </>
                 )}
+
+                <button
+                  className="preview-action-btn preview-delete-btn"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  Delete
+                </button>
 
                 <button className="preview-close" onClick={closePreview}>
                   ✕
@@ -947,6 +1123,41 @@ export default function Invoices() {
                     </span>
                   </div>
                 )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div
+          className="confirm-overlay"
+          onClick={() => setConfirmDelete(false)}
+        >
+          <div
+            className="confirm-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="confirm-title">Delete this document?</h3>
+
+            <p className="confirm-text">
+              Are you sure you want to delete {preview?.invoiceNumber}? This
+              action cannot be undone.
+            </p>
+
+            <div className="confirm-actions">
+              <button
+                className="confirm-cancel"
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="confirm-delete"
+                onClick={confirmDeleteInvoice}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
