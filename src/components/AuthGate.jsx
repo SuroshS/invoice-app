@@ -25,7 +25,6 @@ const styles = `
   display: block;
   margin: 0 auto 12px;
 }
-
 .auth-logo-wrap {
   text-align: center;
   margin-bottom: 8px;
@@ -35,7 +34,8 @@ const styles = `
   color: #bbb;
   margin: 0 0 2rem;
   text-align: center;
-}.auth-field { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+}
+.auth-field { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
 .auth-field label { font-size: 0.75rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
 .auth-field input {
   padding: 0.65rem 0.875rem; border: 1px solid #e5e5e5; border-radius: 8px;
@@ -50,8 +50,9 @@ const styles = `
 }
 .auth-submit:hover { opacity: 0.85; }
 .auth-submit:disabled { opacity: 0.4; cursor: not-allowed; }
-.auth-error { background: #fff5f5; color: #c0392b; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; margin-bottom: 1rem; }
-.auth-success { background: #f0faf5; color: #2a7a50; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; margin-bottom: 1rem; }
+.auth-error { background: #fff5f5; color: #c0392b; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; margin-bottom: 1rem; border: 1px solid #fde0e0; }
+.auth-success { background: #f0faf5; color: #2a7a50; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; margin-bottom: 1rem; border: 1px solid #c3e6d8; }
+.auth-info { background: #f0eefe; color: #533483; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.8rem; margin-bottom: 1rem; border: 1px solid #d4c8f8; }
 .auth-toggle { text-align: center; margin-top: 1.25rem; font-size: 0.78rem; color: #bbb; }
 .auth-toggle button { background: none; border: none; color: #111; font-weight: 600; cursor: pointer; font-size: 0.78rem; padding: 0; font-family: system-ui, sans-serif; text-decoration: underline; }
 .trial-badge {
@@ -68,8 +69,43 @@ const styles = `
   text-align: center;
 }
 .trial-badge span { font-weight: 600; }
+
+/* Forgot password link */
+.auth-forgot {
+  text-align: right;
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+.auth-forgot button {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: system-ui;
+  padding: 0;
+  transition: color 0.15s;
+}
+.auth-forgot button:hover { color: #111; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 1.25rem 0;
+}
+.auth-divider hr {
+  flex: 1;
+  border: none;
+  border-top: 1px solid #ebebeb;
+}
+.auth-divider span {
+  font-size: 0.72rem;
+  color: #ccc;
+}
+
 .auth-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f7f7f7; font-family: system-ui, sans-serif; color: #bbb; font-size: 0.875rem; }
-.paywall-wrap { min-height: 100vh; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
+.paywall-wrap { min-height: 100vh; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; padding: 20px; }
 .paywall-card { background: #fff; border: 1px solid #ebebeb; border-radius: 14px; padding: 2.5rem; width: 100%; max-width: 420px; text-align: center; }
 .paywall-icon { font-size: 2.5rem; margin-bottom: 1rem; }
 .paywall-card h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
@@ -95,6 +131,7 @@ export default function AuthGate({ children }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -124,7 +161,6 @@ export default function AuthGate({ children }) {
     const remaining = 14 - diffDays;
     setDaysLeft(Math.max(0, remaining));
 
-    // Check if user has active subscription in settings
     const { data: settingsRow } = await supabase
       .from("settings")
       .select("data")
@@ -146,7 +182,6 @@ export default function AuthGate({ children }) {
     );
   }
 
-  // Show paywall if trial expired
   if (user && trialExpired) {
     return (
       <>
@@ -164,12 +199,14 @@ export default function AuthGate({ children }) {
               </div>
               <div className={`paywall-plan ${selectedPlan === 'yearly' ? 'selected' : ''}`} onClick={() => setSelectedPlan('yearly')}>
                 <div className="plan-name">Yearly</div>
-                <div className="plan-price">$69.99</div>
+                <div className="plan-price">$99</div>
                 <div className="plan-period">per year</div>
-                <div className="plan-save">Save $97 — 5 months free</div>
+                <div className="plan-save">Save $68 — best value</div>
               </div>
             </div>
-            <button className="paywall-btn">Continue with {selectedPlan === 'yearly' ? '$69.99/year' : '$13.99/month'} →</button>
+            <button className="paywall-btn">
+              Continue with {selectedPlan === 'yearly' ? '$99/year' : '$13.99/month'} →
+            </button>
             <br />
             <button className="paywall-signout" onClick={() => supabase.auth.signOut()}>Sign out</button>
           </div>
@@ -178,34 +215,107 @@ export default function AuthGate({ children }) {
     );
   }
 
-  // Logged in and trial active
   if (user) return children;
 
+  // ── FORGOT PASSWORD MODE ──
+  if (mode === "forgot") {
+    async function handleForgotPassword() {
+      if (!email) { setError("Please enter your email address."); return; }
+      setError("");
+      setLoading(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) {
+        setError(error.message);
+      } else {
+        setSuccess("Check your email — we've sent you a password reset link.");
+      }
+      setLoading(false);
+    }
+
+    return (
+      <>
+        <style>{styles}</style>
+        <div className="auth-wrap">
+          <div className="auth-card">
+            <div className="auth-logo-wrap">
+              <img src={logo} alt="Payvle" className="auth-logo" />
+            </div>
+            <p className="auth-sub">Enter your email and we'll send you a reset link</p>
+
+            {error && <div className="auth-error">{error}</div>}
+            {success && <div className="auth-success">{success}</div>}
+
+            {!success && (
+              <>
+                <div className="auth-field">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleForgotPassword()}
+                    placeholder="you@example.com"
+                    autoFocus
+                  />
+                </div>
+                <button
+                  className="auth-submit"
+                  onClick={handleForgotPassword}
+                  disabled={!email || loading}
+                >
+                  {loading ? "Sending..." : "Send reset link"}
+                </button>
+              </>
+            )}
+
+            <div className="auth-toggle">
+              <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }}>
+                ← Back to sign in
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── LOGIN / SIGNUP MODE ──
   async function handleLogin() {
     setError("");
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError(error.message);
+    if (error) {
+      if (error.message.includes("Email not confirmed")) {
+        setError("Please confirm your email before signing in. Check your inbox for a confirmation link.");
+      } else if (error.message.includes("Invalid login credentials")) {
+        setError("Incorrect email or password. Please try again.");
+      } else {
+        setError(error.message);
+      }
+    }
     setLoading(false);
   }
 
   async function handleSignup() {
     setError("");
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      setLoading(false);
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
+    setSuccess("");
+    if (!email || !password) { setError("Please fill in all fields."); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) {
-      setError(error.message);
+      if (error.message.includes("already registered")) {
+        setError("An account with this email already exists. Try signing in instead.");
+      } else {
+        setError(error.message);
+      }
     } else {
-      setSuccess("Account created! You have 14 days free. Signing you in...");
+      setSuccess("Account created! Check your email to confirm your account, then sign in.");
+      setPassword("");
+      setConfirmPassword("");
     }
     setLoading(false);
   }
@@ -220,25 +330,23 @@ export default function AuthGate({ children }) {
       <div className="auth-wrap">
         <div className="auth-card">
           <div className="auth-logo-wrap">
-  <img
-    src={logo}
-    alt="PAYVLE"
-    className="auth-logo"
-  />
-</div>
+            <img src={logo} alt="Payvle" className="auth-logo" />
+          </div>
           <p className="auth-sub">
-  {mode === "login"
-    ? "Sign in to continue"
-    : "Create your account and start invoicing"}
-</p>
+            {mode === "login"
+              ? "Sign in to continue"
+              : "Create your account and start invoicing"}
+          </p>
+
           {mode === "signup" && (
             <div className="trial-badge">
-               <span>14 days free</span> — no credit card required
+              <span>14 days free</span> — no credit card required
             </div>
           )}
 
           {error && <div className="auth-error">{error}</div>}
           {success && <div className="auth-success">{success}</div>}
+          {info && <div className="auth-info">{info}</div>}
 
           <div className="auth-field">
             <label>Email</label>
@@ -263,6 +371,15 @@ export default function AuthGate({ children }) {
             />
           </div>
 
+          {/* Forgot password — only on login */}
+          {mode === "login" && (
+            <div className="auth-forgot">
+              <button onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }}>
+                Forgot password?
+              </button>
+            </div>
+          )}
+
           {mode === "signup" && (
             <div className="auth-field">
               <label>Confirm Password</label>
@@ -281,19 +398,23 @@ export default function AuthGate({ children }) {
             onClick={mode === "login" ? handleLogin : handleSignup}
             disabled={!email || !password || loading}
           >
-            {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account — Free"}
+            {loading
+              ? "Please wait..."
+              : mode === "login"
+              ? "Sign In"
+              : "Create Account — Free"}
           </button>
 
           <div className="auth-toggle">
             {mode === "login" ? (
               <>Don't have an account?{" "}
-                <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}>
+                <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); setInfo(""); }}>
                   Sign up free
                 </button>
               </>
             ) : (
               <>Already have an account?{" "}
-                <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }}>
+                <button onClick={() => { setMode("login"); setError(""); setSuccess(""); setInfo(""); }}>
                   Sign in
                 </button>
               </>

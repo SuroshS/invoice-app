@@ -6,15 +6,17 @@ const styles = `
 
 .inv-page {
   box-sizing: border-box;
-  max-width: 1000px;
   width: 100%;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+  max-width: none;
+  margin: 0;
+  padding: 2rem;
   font-family: system-ui, sans-serif;
 }
 
-.inv-page * {
-  box-sizing: border-box;
+@media (max-width: 640px) {
+  .inv-page {
+    padding: 1rem;
+  }
 }
 
 .inv-header {
