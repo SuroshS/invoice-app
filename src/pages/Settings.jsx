@@ -5,35 +5,47 @@ const styles = `
 * { box-sizing: border-box; }
 
 .sett-page {
-  max-width: 860px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
-  font-family: system-ui, sans-serif;
+  padding: 1.75rem 1.5rem 3rem;
+  font-family: system-ui, -apple-system, sans-serif;
   color: #111;
 }
 
-.sett-header { margin-bottom: 1.5rem; }
-.sett-title { font-size: 1.1rem; font-weight: 600; color: #111; margin: 0; }
-.sett-subtitle { font-size: 0.8rem; color: #bbb; margin: 4px 0 0; }
+.sett-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sett-header-left h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 2px;
+  letter-spacing: -0.01em;
+}
+.sett-subtitle { font-size: 0.8rem; color: #aaa; }
 
 .sett-card {
   background: #fff;
   border: 1px solid #ebebeb;
   border-radius: 12px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   margin-bottom: 12px;
 }
 
 .sett-card-title {
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
   color: #bbb;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
 }
 
-.sett-card-desc { font-size: 0.78rem; color: #aaa; margin: -6px 0 14px; }
+.sett-card-desc { font-size: 0.78rem; color: #aaa; margin: -5px 0 12px; }
 
 .sett-grid-2 {
   display: grid;
@@ -44,16 +56,22 @@ const styles = `
 
 .sett-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .sett-field:last-child { margin-bottom: 0; }
-.sett-field label { font-size: 0.7rem; color: #bbb; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+.sett-field label {
+  font-size: 0.7rem;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
 
 .sett-field input,
 .sett-field textarea {
   width: 100%;
-  padding: 9px 11px;
-  border-radius: 7px;
-  border: 1px solid #e5e5e5;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
   background: #fafafa;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   color: #111;
   font-family: system-ui;
   box-sizing: border-box;
@@ -62,75 +80,128 @@ const styles = `
 
 .sett-field input:focus,
 .sett-field textarea:focus { outline: none; border-color: #111; background: #fff; }
-.sett-field textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+.sett-field textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
 
+/* Bank accordion — styled to match ci-type-btn / inv-filter-btn family */
 .card-bank { padding: 0; overflow: hidden; }
 .accordion-trigger {
-  width: 100%; padding: 18px 20px; border: none; background: #fff;
-  cursor: pointer; display: flex; justify-content: space-between;
-  align-items: center; font-family: system-ui; text-align: left;
+  width: 100%;
+  padding: 14px 18px;
+  border: none;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: system-ui;
+  text-align: left;
+  transition: background 0.15s;
 }
 .accordion-trigger:hover { background: #fafafa; }
-.accordion-chevron { font-size: 13px; color: #bbb; transition: transform 0.2s ease; }
-.card-bank.open .accordion-chevron { transform: rotate(180deg); }
-.accordion-body { padding: 0 20px 18px; border-top: 1px solid #f0f0f0; }
+.accordion-trigger .sett-card-title { margin: 0; }
+.accordion-chevron {
+  font-size: 11px;
+  color: #bbb;
+  transition: transform 0.2s ease;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.card-bank.open .accordion-chevron { transform: rotate(180deg); background: #111; color: #fff; }
+.accordion-body { padding: 0 18px 16px; border-top: 1px solid #f5f5f5; }
+.accordion-body .sett-card-desc { margin-top: 12px; }
 
-.sett-logo-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.sett-logo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
 .sett-logo-btn {
-  font-size: 12px; padding: 7px 12px; border-radius: 6px;
-  border: 1px solid #e0e0e0; background: #fff; color: #333;
-  cursor: pointer; font-family: system-ui; transition: all 0.15s;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+  font-family: system-ui;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
 .sett-logo-btn:hover { background: #f5f5f5; border-color: #bbb; }
 .sett-logo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sett-logo-preview {
-  width: 120px; height: 64px; border: 1px solid #ebebeb;
-  border-radius: 8px; background: #fafafa;
-  display: flex; align-items: center; justify-content: center;
-  padding: 10px; overflow: hidden;
+  width: 108px;
+  height: 58px;
+  border: 1px solid #ebebeb;
+  border-radius: 8px;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  overflow: hidden;
 }
 .sett-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.sett-logo-placeholder { font-size: 0.7rem; color: #bbb; text-align: center; }
+.sett-logo-placeholder { font-size: 0.68rem; color: #bbb; text-align: center; }
 
-.sett-save-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.sett-save-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 
+/* Same button family as ci-btn-dark in CreateInvoice */
 .sett-save-btn {
-  font-size: 12px; padding: 8px 14px; border-radius: 6px;
-  border: 1px solid #111; background: #111; color: #fff;
-  cursor: pointer; font-family: system-ui; font-weight: 500;
-  transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #111;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-family: system-ui;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .sett-save-btn:hover { background: #333; border-color: #333; }
 .sett-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.sett-saved { font-size: 0.8rem; color: #34c77b; font-weight: 500; }
+.sett-saved {
+  font-size: 0.8rem;
+  color: #2a7a50;
+  font-weight: 600;
+}
 
 .sett-error {
   background: #fff5f5; color: #c0392b; border: 1px solid #fde0e0;
-  border-radius: 8px; padding: 10px 14px; font-size: 0.8rem;
+  border-radius: 9px; padding: 9px 13px; font-size: 0.82rem;
   margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
 }
 
 .sett-logo-error {
-  font-size: 0.75rem; color: #c0392b; margin-top: 4px;
+  font-size: 0.74rem; color: #c0392b; margin-top: 6px;
+  width: 100%;
 }
 
 .sett-spinner {
-  width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+  width: 11px; height: 11px; border: 2px solid rgba(255,255,255,0.3);
   border-top-color: #fff; border-radius: 50%;
   animation: settSpin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes settSpin { to { transform: rotate(360deg) } }
 
-@media (max-width: 640px) {
-  .sett-page { padding: 1rem; }
-  .sett-title { font-size: 1rem; }
+@media (max-width: 600px) {
+  .sett-page { padding: 1rem 1rem 3rem; }
+  .sett-header-left h1 { font-size: 1.1rem; }
   .sett-grid-2 { grid-template-columns: 1fr; gap: 10px; }
-  .sett-card { padding: 16px; }
-  .accordion-trigger { padding: 16px; }
-  .accordion-body { padding: 0 16px 16px; }
-  .sett-save-btn { width: 100%; padding: 10px 14px; justify-content: center; }
+  .sett-card { padding: 14px; }
+  .accordion-trigger { padding: 12px 14px; }
+  .accordion-body { padding: 0 14px 14px; }
+  .sett-save-btn { width: 100%; justify-content: center; padding: 10px 14px; }
   .sett-save-row { align-items: stretch; flex-direction: column; }
 }
 `;
@@ -209,15 +280,16 @@ export default function Settings() {
     <>
       <style>{styles}</style>
       <div className="sett-page">
+
         <div className="sett-header">
-          <h1 className="sett-title">Settings</h1>
-          <p className="sett-subtitle">Business & invoice configuration</p>
+          <div className="sett-header-left">
+            <h1>Settings</h1>
+            <span className="sett-subtitle">Business & invoice configuration</span>
+          </div>
         </div>
 
         {saveError && (
-          <div className="sett-error">
-            ⚠ {saveError}
-          </div>
+          <div className="sett-error">⚠ {saveError}</div>
         )}
 
         <div className="sett-card">
@@ -263,7 +335,7 @@ export default function Settings() {
             className="accordion-trigger"
             onClick={() => setBankOpen(prev => !prev)}
           >
-            <p className="sett-card-title" style={{ margin: 0 }}>Bank Details</p>
+            <p className="sett-card-title">Bank Details</p>
             <span className="accordion-chevron">⌄</span>
           </button>
 
@@ -325,9 +397,9 @@ export default function Settings() {
                 <div className="sett-logo-placeholder">No logo yet</div>
               )}
             </div>
-          </div>
 
-          {logoError && <div className="sett-logo-error">⚠ {logoError}</div>}
+            {logoError && <div className="sett-logo-error">⚠ {logoError}</div>}
+          </div>
         </div>
 
         <div className="sett-save-row">

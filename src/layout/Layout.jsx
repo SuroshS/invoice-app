@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useApp } from "../context/AppContext";
-import logo from "../assets/transparentbglogo.png";
+import logo from "../assets/paivlewhite-removebg-preview.png";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⊞" },

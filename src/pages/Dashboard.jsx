@@ -10,10 +10,9 @@ const styles = `
 }
 
 .dash {
-  max-width: 1180px;
   width: 100%;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+  margin: 0;
+  padding: 2rem clamp(1.25rem, 3vw, 3.5rem);
   font-family: system-ui, sans-serif;
   overflow-x: hidden;
 }
@@ -139,10 +138,10 @@ const styles = `
   margin-top: 1rem;
 }
 
-/* Top revenue cards */
+/* Top revenue cards — scales with screen size, no fixed cap */
 .hero {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -168,7 +167,7 @@ const styles = `
 }
 
 .hero-value {
-  font-size: clamp(1.05rem, 1.6vw, 1.5rem);
+  font-size: clamp(1.05rem, 1.4vw, 1.6rem);
   font-weight: 600;
   color: #fff;
   line-height: 1.1;
@@ -189,10 +188,10 @@ const styles = `
   color: #f87171;
 }
 
-/* Small stat tiles */
+/* Small stat tiles — scales with screen size */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -215,7 +214,7 @@ const styles = `
 }
 
 .tile-value {
-  font-size: clamp(1.05rem, 1.6vw, 1.4rem);
+  font-size: clamp(1.05rem, 1.4vw, 1.45rem);
   font-weight: 600;
   color: #111;
   line-height: 1.1;
@@ -230,14 +229,14 @@ const styles = `
 
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
   margin-bottom: 1rem;
 }
 
 .grid-2-3 {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr);
   gap: 1rem;
 }
 
@@ -327,7 +326,7 @@ const styles = `
 
 .qa-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
 }
 
@@ -564,20 +563,13 @@ const styles = `
   padding: 0.5rem 0;
 }
 
+/* On very wide screens, stop the hero cards getting absurdly large */
+@media (min-width: 1700px) {
+  .hero-value { font-size: 1.6rem; }
+  .tile-value { font-size: 1.45rem; }
+}
+
 @media (max-width: 1100px) {
-  .dash {
-    padding: 2rem 1rem;
-  }
-
-  .hero {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .tiles {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .grid-2,
   .grid-2-3 {
     grid-template-columns: 1fr;
   }
@@ -846,7 +838,7 @@ export default function Dashboard() {
           <div className="welcome-wrap">
             <div className="welcome-icon">⚡</div>
 
-            <h1>Welcome to InvoicePro</h1>
+            <h1>Welcome to Payvle</h1>
 
             <p>
               You're almost ready to send your first invoice. It only takes 2

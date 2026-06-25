@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import logo from "../assets/forwhitebackgroundlogo.png";
+import logo from "../assets/paivleblack.png";
 
 const styles = `
 .auth-wrap {
@@ -69,8 +69,6 @@ const styles = `
   text-align: center;
 }
 .trial-badge span { font-weight: 600; }
-
-/* Forgot password link */
 .auth-forgot {
   text-align: right;
   margin-top: -6px;
@@ -87,41 +85,7 @@ const styles = `
   transition: color 0.15s;
 }
 .auth-forgot button:hover { color: #111; }
-
-.auth-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 1.25rem 0;
-}
-.auth-divider hr {
-  flex: 1;
-  border: none;
-  border-top: 1px solid #ebebeb;
-}
-.auth-divider span {
-  font-size: 0.72rem;
-  color: #ccc;
-}
-
 .auth-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f7f7f7; font-family: system-ui, sans-serif; color: #bbb; font-size: 0.875rem; }
-.paywall-wrap { min-height: 100vh; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; padding: 20px; }
-.paywall-card { background: #fff; border: 1px solid #ebebeb; border-radius: 14px; padding: 2.5rem; width: 100%; max-width: 420px; text-align: center; }
-.paywall-icon { font-size: 2.5rem; margin-bottom: 1rem; }
-.paywall-card h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
-.paywall-card p { font-size: 0.875rem; color: #888; margin-bottom: 2rem; line-height: 1.6; }
-.paywall-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
-.paywall-plan { border: 1px solid #ebebeb; border-radius: 10px; padding: 1.25rem; cursor: pointer; transition: all 0.2s; text-align: left; background: #fff; }
-.paywall-plan:hover { border-color: #111; }
-.paywall-plan.selected { border-color: #533483; background: #f0eefe; }
-.paywall-plan .plan-name { font-size: 0.78rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-.paywall-plan.selected .plan-name { color: #533483; }
-.paywall-plan .plan-price { font-size: 1.4rem; font-weight: 600; color: #111; line-height: 1; margin-bottom: 3px; }
-.paywall-plan .plan-period { font-size: 0.72rem; color: #aaa; }
-.paywall-plan .plan-save { font-size: 0.7rem; color: #533483; font-weight: 500; margin-top: 4px; }
-.paywall-btn { width: 100%; padding: 0.75rem; background: #111; color: #fff; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; margin-bottom: 0.75rem; }
-.paywall-btn:hover { opacity: 0.85; }
-.paywall-signout { background: none; border: none; color: #bbb; font-size: 0.78rem; cursor: pointer; font-family: system-ui, sans-serif; text-decoration: underline; }
 `;
 
 export default function AuthGate({ children }) {
@@ -135,41 +99,134 @@ export default function AuthGate({ children }) {
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const [trialExpired, setTrialExpired] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState("yearly");
-  const [daysLeft, setDaysLeft] = useState(14);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let mounted = true;
+
+    async function initAuth() {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Auth session error:", error);
+        setUser(null);
+      } else {
+        setUser(session?.user ?? null);
+      }
+
+      setAuthLoading(false);
+    }
+
+    initAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
       setUser(session?.user ?? null);
-      if (session?.user) checkTrial(session.user);
       setAuthLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) checkTrial(session.user);
-    });
-
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  async function checkTrial(user) {
-    const createdAt = new Date(user.created_at);
-    const now = new Date();
-    const diffDays = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
-    const remaining = 14 - diffDays;
-    setDaysLeft(Math.max(0, remaining));
+  async function handleForgotPassword() {
+    if (!email) {
+      setError("Please enter your email address.");
+      return;
+    }
 
-    const { data: settingsRow } = await supabase
-      .from("settings")
-      .select("data")
-      .eq("user_id", user.id)
-      .single();
+    setError("");
+    setSuccess("");
+    setLoading(true);
 
-    const hasPaid = settingsRow?.data?.subscriptionActive === true;
-    if (!hasPaid && diffDays >= 14) {
-      setTrialExpired(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccess("Check your email — we've sent you a password reset link.");
+    }
+
+    setLoading(false);
+  }
+
+  async function handleLogin() {
+    setError("");
+    setSuccess("");
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      if (error.message.includes("Email not confirmed")) {
+        setError("Please confirm your email before signing in. Check your inbox for a confirmation link.");
+      } else if (error.message.includes("Invalid login credentials")) {
+        setError("Incorrect email or password. Please try again.");
+      } else {
+        setError(error.message);
+      }
+    }
+
+    setLoading(false);
+  }
+
+  async function handleSignup() {
+    setError("");
+    setSuccess("");
+
+    if (!email || !password) {
+      setError("Please fill in all fields.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      if (error.message.includes("already registered")) {
+        setError("An account with this email already exists. Try signing in instead.");
+      } else {
+        setError(error.message);
+      }
+    } else {
+      setSuccess("Account created! Check your email to confirm your account, then sign in.");
+      setPassword("");
+      setConfirmPassword("");
+    }
+
+    setLoading(false);
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter") {
+      mode === "login" ? handleLogin() : handleSignup();
     }
   }
 
@@ -182,66 +239,18 @@ export default function AuthGate({ children }) {
     );
   }
 
-  if (user && trialExpired) {
-    return (
-      <>
-        <style>{styles}</style>
-        <div className="paywall-wrap">
-          <div className="paywall-card">
-            <div className="paywall-icon">⏰</div>
-            <h2>Your free trial has ended</h2>
-            <p>You've had 14 days free. Choose a plan to keep sending invoices and growing your business.</p>
-            <div className="paywall-plans">
-              <div className={`paywall-plan ${selectedPlan === 'monthly' ? 'selected' : ''}`} onClick={() => setSelectedPlan('monthly')}>
-                <div className="plan-name">Monthly</div>
-                <div className="plan-price">$13.99</div>
-                <div className="plan-period">per month</div>
-              </div>
-              <div className={`paywall-plan ${selectedPlan === 'yearly' ? 'selected' : ''}`} onClick={() => setSelectedPlan('yearly')}>
-                <div className="plan-name">Yearly</div>
-                <div className="plan-price">$99</div>
-                <div className="plan-period">per year</div>
-                <div className="plan-save">Save $68 — best value</div>
-              </div>
-            </div>
-            <button className="paywall-btn">
-              Continue with {selectedPlan === 'yearly' ? '$99/year' : '$13.99/month'} →
-            </button>
-            <br />
-            <button className="paywall-signout" onClick={() => supabase.auth.signOut()}>Sign out</button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
   if (user) return children;
 
-  // ── FORGOT PASSWORD MODE ──
   if (mode === "forgot") {
-    async function handleForgotPassword() {
-      if (!email) { setError("Please enter your email address."); return; }
-      setError("");
-      setLoading(true);
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (error) {
-        setError(error.message);
-      } else {
-        setSuccess("Check your email — we've sent you a password reset link.");
-      }
-      setLoading(false);
-    }
-
     return (
       <>
         <style>{styles}</style>
         <div className="auth-wrap">
           <div className="auth-card">
             <div className="auth-logo-wrap">
-              <img src={logo} alt="Payvle" className="auth-logo" />
+              <img src={logo} alt="Paivle" className="auth-logo" />
             </div>
+
             <p className="auth-sub">Enter your email and we'll send you a reset link</p>
 
             {error && <div className="auth-error">{error}</div>}
@@ -254,12 +263,13 @@ export default function AuthGate({ children }) {
                   <input
                     type="email"
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleForgotPassword()}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleForgotPassword()}
                     placeholder="you@example.com"
                     autoFocus
                   />
                 </div>
+
                 <button
                   className="auth-submit"
                   onClick={handleForgotPassword}
@@ -271,7 +281,13 @@ export default function AuthGate({ children }) {
             )}
 
             <div className="auth-toggle">
-              <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }}>
+              <button
+                onClick={() => {
+                  setMode("login");
+                  setError("");
+                  setSuccess("");
+                }}
+              >
                 ← Back to sign in
               </button>
             </div>
@@ -281,57 +297,16 @@ export default function AuthGate({ children }) {
     );
   }
 
-  // ── LOGIN / SIGNUP MODE ──
-  async function handleLogin() {
-    setError("");
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      if (error.message.includes("Email not confirmed")) {
-        setError("Please confirm your email before signing in. Check your inbox for a confirmation link.");
-      } else if (error.message.includes("Invalid login credentials")) {
-        setError("Incorrect email or password. Please try again.");
-      } else {
-        setError(error.message);
-      }
-    }
-    setLoading(false);
-  }
-
-  async function handleSignup() {
-    setError("");
-    setSuccess("");
-    if (!email || !password) { setError("Please fill in all fields."); return; }
-    if (password !== confirmPassword) { setError("Passwords do not match."); return; }
-    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      if (error.message.includes("already registered")) {
-        setError("An account with this email already exists. Try signing in instead.");
-      } else {
-        setError(error.message);
-      }
-    } else {
-      setSuccess("Account created! Check your email to confirm your account, then sign in.");
-      setPassword("");
-      setConfirmPassword("");
-    }
-    setLoading(false);
-  }
-
-  function handleKey(e) {
-    if (e.key === "Enter") mode === "login" ? handleLogin() : handleSignup();
-  }
-
   return (
     <>
       <style>{styles}</style>
+
       <div className="auth-wrap">
         <div className="auth-card">
           <div className="auth-logo-wrap">
-            <img src={logo} alt="Payvle" className="auth-logo" />
+            <img src={logo} alt="Paivle" className="auth-logo" />
           </div>
+
           <p className="auth-sub">
             {mode === "login"
               ? "Sign in to continue"
@@ -353,7 +328,7 @@ export default function AuthGate({ children }) {
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               onKeyDown={handleKey}
               placeholder="you@example.com"
               autoFocus
@@ -365,16 +340,21 @@ export default function AuthGate({ children }) {
             <input
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               onKeyDown={handleKey}
               placeholder="••••••••"
             />
           </div>
 
-          {/* Forgot password — only on login */}
           {mode === "login" && (
             <div className="auth-forgot">
-              <button onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }}>
+              <button
+                onClick={() => {
+                  setMode("forgot");
+                  setError("");
+                  setSuccess("");
+                }}
+              >
                 Forgot password?
               </button>
             </div>
@@ -386,7 +366,7 @@ export default function AuthGate({ children }) {
               <input
                 type="password"
                 value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 onKeyDown={handleKey}
                 placeholder="••••••••"
               />
@@ -407,14 +387,30 @@ export default function AuthGate({ children }) {
 
           <div className="auth-toggle">
             {mode === "login" ? (
-              <>Don't have an account?{" "}
-                <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); setInfo(""); }}>
+              <>
+                Don't have an account?{" "}
+                <button
+                  onClick={() => {
+                    setMode("signup");
+                    setError("");
+                    setSuccess("");
+                    setInfo("");
+                  }}
+                >
                   Sign up free
                 </button>
               </>
             ) : (
-              <>Already have an account?{" "}
-                <button onClick={() => { setMode("login"); setError(""); setSuccess(""); setInfo(""); }}>
+              <>
+                Already have an account?{" "}
+                <button
+                  onClick={() => {
+                    setMode("login");
+                    setError("");
+                    setSuccess("");
+                    setInfo("");
+                  }}
+                >
                   Sign in
                 </button>
               </>
