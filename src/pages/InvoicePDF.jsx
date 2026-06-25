@@ -35,6 +35,11 @@ export default function InvoicePDF({ invoice, settings, totals }) {
   const billToLabel = isQuote ? "Prepared For:" : "Bill To:";
   const logoSrc = settings.logoUrl || settings.logoDataUrl || null;
 
+  // Pull the correct terms block based on document type — set independently in
+  // Settings under the Terms & Conditions accordion (Invoice Terms vs Quote Terms).
+  const termsText = isQuote ? settings.quoteTerms : settings.invoiceTerms;
+  const termsHeading = isQuote ? "Quote Terms & Conditions" : "Invoice Terms & Conditions";
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -124,28 +129,20 @@ export default function InvoicePDF({ invoice, settings, totals }) {
           </View>
         ) : null}
 
+        {/* TERMS & CONDITIONS — pulls invoiceTerms or quoteTerms depending on document
+            type, set independently per type in Settings. Only renders if the relevant
+            field has actually been filled in, so documents created before this feature
+            existed (or for users who never set terms) don't show an empty section. */}
+        {termsText ? (
+          <View style={{ marginTop: 25 }}>
+            <Text style={styles.termsTitle}>{termsHeading}</Text>
+            <Text style={styles.termsText}>{termsText}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.divider} />
 
-        {/* TERMS */}
-        {!isQuote ? (
-          <View>
-            <Text style={styles.termsTitle}>Terms & Conditions</Text>
-            <Text style={styles.termsText}>• All works have been completed in accordance with applicable Australian Standards and QBCC regulations.</Text>
-            <Text style={styles.termsText}>• This invoice is issued upon completion of works unless otherwise agreed in writing.</Text>
-            <Text style={styles.termsText}>• Payment is due within 7 days from the invoice issue date.</Text>
-            <Text style={styles.termsText}>• Late payments may be subject to administrative follow-up.</Text>
-            <Text style={styles.termsText}>• Ownership of materials and workmanship remains with {settings.businessName || "the business"} until payment is received in full.</Text>
-          </View>
-        ) : (
-          <View>
-            <Text style={styles.termsTitle}>Quote Terms</Text>
-            <Text style={styles.termsText}>• This quote is valid for 30 days from the date of issue.</Text>
-            <Text style={styles.termsText}>• Prices are subject to change after the validity period.</Text>
-            <Text style={styles.termsText}>• Work will commence upon written acceptance of this quote.</Text>
-            <Text style={styles.termsText}>• All works will be completed in accordance with applicable Australian Standards and QBCC regulations.</Text>
-          </View>
-        )}
-
+        
       </Page>
     </Document>
   );

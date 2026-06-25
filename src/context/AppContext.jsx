@@ -16,6 +16,8 @@ const defaultSettings = {
   quotePrefix: "QUO-",
   nextInvoiceNumber: 1,
   nextQuoteNumber: 1,
+  invoiceTerms: "",
+  quoteTerms: "",
 };
 
 export function AppProvider({ children }) {

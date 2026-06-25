@@ -82,8 +82,8 @@ const styles = `
 .sett-field textarea:focus { outline: none; border-color: #111; background: #fff; }
 .sett-field textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
 
-/* Bank accordion — styled to match ci-type-btn / inv-filter-btn family */
-.card-bank { padding: 0; overflow: hidden; }
+/* Bank accordion / Terms accordion — same shared accordion family */
+.card-bank, .card-terms { padding: 0; overflow: hidden; }
 .accordion-trigger {
   width: 100%;
   padding: 14px 18px;
@@ -112,9 +112,28 @@ const styles = `
   justify-content: center;
   flex-shrink: 0;
 }
-.card-bank.open .accordion-chevron { transform: rotate(180deg); background: #111; color: #fff; }
+.card-bank.open .accordion-chevron,
+.card-terms.open .accordion-chevron { transform: rotate(180deg); background: #111; color: #fff; }
 .accordion-body { padding: 0 18px 16px; border-top: 1px solid #f5f5f5; }
 .accordion-body .sett-card-desc { margin-top: 12px; }
+
+/* Sub-tabs for switching between Quote / Invoice terms within the Terms card */
+.terms-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.terms-tab {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: 1px solid #e0e0e0;
+  background: #f5f5f5;
+  color: #888;
+  cursor: pointer;
+  font-family: system-ui;
+  transition: all 0.15s;
+}
+.terms-tab:hover { border-color: #bbb; color: #555; }
+.terms-tab.active { background: #111; color: #fff; border-color: #111; }
+.terms-tab.quote-active { background: #5b41c0; border-color: #5b41c0; }
 
 .sett-logo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
@@ -203,6 +222,8 @@ const styles = `
   .accordion-body { padding: 0 14px 14px; }
   .sett-save-btn { width: 100%; justify-content: center; padding: 10px 14px; }
   .sett-save-row { align-items: stretch; flex-direction: column; }
+  .terms-tabs { width: 100%; }
+  .terms-tab { flex: 1; text-align: center; }
 }
 `;
 
@@ -224,6 +245,10 @@ export default function Settings() {
   const [saveError, setSaveError] = useState("");
   const [logoError, setLogoError] = useState("");
   const [bankOpen, setBankOpen] = useState(false);
+
+  // Terms & Conditions accordion + which sub-tab (Invoice or Quote) is active inside it
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsTab, setTermsTab] = useState("invoice"); // "invoice" | "quote"
 
   const settings = data?.settings || {};
 
@@ -370,6 +395,66 @@ export default function Settings() {
                   />
                 </Field>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Terms & Conditions — separate fields for Invoice vs Quote, since quotes
+            typically need a validity period / disclaimer while invoices need payment
+            terms. Stored as settings.invoiceTerms and settings.quoteTerms respectively,
+            and pulled into the PDF based on which type of document is being rendered. */}
+        <div className={`sett-card card-terms ${termsOpen ? "open" : ""}`}>
+          <button
+            type="button"
+            className="accordion-trigger"
+            onClick={() => setTermsOpen(prev => !prev)}
+          >
+            <p className="sett-card-title">Terms & Conditions</p>
+            <span className="accordion-chevron">⌄</span>
+          </button>
+
+          {termsOpen && (
+            <div className="accordion-body">
+              <p className="sett-card-desc">
+                Set different terms for invoices and quotes — these print at the bottom of every document.
+              </p>
+
+              <div className="terms-tabs">
+                <button
+                  type="button"
+                  className={`terms-tab${termsTab === "invoice" ? " active" : ""}`}
+                  onClick={() => setTermsTab("invoice")}
+                >
+                  Invoice Terms
+                </button>
+                <button
+                  type="button"
+                  className={`terms-tab${termsTab === "quote" ? " quote-active active" : ""}`}
+                  onClick={() => setTermsTab("quote")}
+                >
+                  Quote Terms
+                </button>
+              </div>
+
+              {termsTab === "invoice" ? (
+                <Field label="Invoice Terms & Conditions">
+                  <textarea
+                    value={settings.invoiceTerms || ""}
+                    onChange={e => update("invoiceTerms", e.target.value)}
+                    placeholder="e.g. Payment due within 14 days. Late payments may incur a 5% fee."
+                    style={{ minHeight: 110 }}
+                  />
+                </Field>
+              ) : (
+                <Field label="Quote Terms & Conditions">
+                  <textarea
+                    value={settings.quoteTerms || ""}
+                    onChange={e => update("quoteTerms", e.target.value)}
+                    placeholder="e.g. This quote is valid for 30 days. Prices may change if the job scope changes."
+                    style={{ minHeight: 110 }}
+                  />
+                </Field>
+              )}
             </div>
           )}
         </div>
