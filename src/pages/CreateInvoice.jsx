@@ -445,13 +445,27 @@ const styles = `
 `;
 
 export default function CreateInvoice() {
-  const { data, saveInvoice, updateInvoice } = useApp();
+  const { data, saveInvoice, updateInvoice, isReadOnly } = useApp();
   const { settings } = data;
   const location = useLocation();
   const navigate = useNavigate();
 
   const editingInvoice = location.state?.editingInvoice || null;
   const isEditing = Boolean(editingInvoice);
+
+  // If the user's trial has expired and they have no subscription, this page
+  // is read-only — redirect them back to the invoices list and show the upgrade
+  // prompt. This handles direct URL navigation to /create while read-only.
+  useEffect(() => {
+    if (isReadOnly) {
+      navigate("/invoices", { replace: true });
+      setTimeout(() => {
+        if (typeof window.__payvleShowUpgradePrompt === "function") {
+          window.__payvleShowUpgradePrompt();
+        }
+      }, 100);
+    }
+  }, [isReadOnly, navigate]);
 
   const [type, setType] = useState(editingInvoice?.type || "Invoice");
   const [form, setForm] = useState(() =>

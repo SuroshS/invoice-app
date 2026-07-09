@@ -32,6 +32,40 @@ const styles = `
 .inv-create-btn { height: 34px; padding: 0 13px; border-radius: 8px; border: 1px solid #111; background: #111; color: #fff; font-size: 0.82rem; font-weight: 600; cursor: pointer; font-family: system-ui; }
 .inv-global-error { background: #fff5f5; color: #c0392b; border: 1px solid #fde0e0; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; margin-bottom: 14px; }
 .inv-global-success { background: #f0faf5; color: #2a7a50; border: 1px solid #c3e6d8; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; margin-bottom: 14px; }
+
+/* Read-only banner — shown when trial has expired but user still has full view access */
+.inv-readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #c61919ff;
+  border: 1px solid #c61919ff;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  color: #ffffffff;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.inv-readonly-banner-text { flex: 1; line-height: 1.5; }
+.inv-readonly-banner-text strong { font-weight: 700; }
+.inv-readonly-subscribe-btn {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 7px;
+  border: 1px solid #ffffffff;
+  background: #ffffffff;
+  color: #000000ff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: system-ui;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.inv-readonly-subscribe-btn:hover { background: #000000ff; color: #ffffffff; }
+
 .inv-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
 .inv-stat { background: #fff; border: 1px solid #ebebeb; border-radius: 10px; padding: 14px 18px; }
 .inv-stat p { font-size: 0.7rem; color: #bbb; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; margin: 0 0 6px; }
@@ -96,6 +130,8 @@ const styles = `
 .more-menu-divider { height: 1px; background: #f0f0f0; margin: 5px 4px; }
 .more-menu-item.delete-item { color: #c0392b; }
 .more-menu-item.delete-item .mi-icon { color: #c0392b; }
+.more-menu-item.locked-item { color: #aaa; }
+.more-menu-item.locked-item .mi-icon { color: #ccc; }
 
 .inv-mobile-list { display: none; }
 .inv-mobile-card { padding: 14px 16px; border-bottom: 1px solid #f5f5f5; position: relative; }
@@ -121,9 +157,7 @@ const styles = `
 .preview-modal-num { font-size: 0.92rem; font-weight: 700; color: #111; margin-bottom: 2px; }
 .preview-modal-meta { font-size: 0.76rem; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preview-modal-link { font-size: 0.72rem; color: #5b41c0; margin-top: 4px; text-decoration: underline; cursor: pointer; display: inline-block; }
-
 .preview-topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-
 .preview-primary-btn {
   height: 34px; padding: 0 16px; border-radius: 8px; border: 1px solid #111;
   background: #111; color: #fff; font-size: 0.82rem; font-weight: 600; cursor: pointer;
@@ -132,7 +166,6 @@ const styles = `
 .preview-primary-btn:hover { background: #333; }
 .preview-primary-btn.convert { background: #533483; border-color: #533483; }
 .preview-primary-btn.convert:hover { background: #443070; }
-
 .preview-more-wrap { position: relative; }
 .preview-more-btn {
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid #e0e0e0;
@@ -147,7 +180,6 @@ const styles = `
   display: none; overflow: hidden; padding: 6px; z-index: 90; text-align: left;
 }
 .preview-more-menu.show { display: block; }
-
 .preview-close { width: 34px; height: 34px; border-radius: 8px; border: 1px solid #e5e5e5; background: #f5f5f5; color: #888; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .preview-body { flex: 1; overflow-y: auto; overflow-x: hidden; background: #f7f7f7; padding: 16px; }
 .preview-page-img { width: 100%; height: auto; display: block; margin: 0 auto 16px; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.08); }
@@ -182,11 +214,20 @@ const styles = `
   .preview-modal { height: 92vh; max-height: 92vh; border-radius: 16px 16px 0 0; }
   .preview-topbar { padding: 14px 16px; align-items: flex-start; }
   .preview-primary-btn { height: 32px; padding: 0 12px; font-size: 0.76rem; }
+  .inv-readonly-banner { flex-direction: column; align-items: flex-start; }
 }
 `;
 
+// Calls the upgrade prompt that lives in AuthGate. Using the window bridge
+// set up by UpgradePromptBridge so we don't need to pass it as a prop.
+function showUpgradePrompt() {
+  if (typeof window.__payvleShowUpgradePrompt === "function") {
+    window.__payvleShowUpgradePrompt();
+  }
+}
+
 export default function Invoices() {
-  const { data, deleteInvoice, convertQuoteToInvoice } = useApp();
+  const { data, deleteInvoice, convertQuoteToInvoice, isReadOnly } = useApp();
   const navigate = useNavigate();
 
   const [preview, setPreview] = useState(null);
@@ -200,21 +241,14 @@ export default function Invoices() {
   const [deleteError, setDeleteError] = useState("");
   const [globalError, setGlobalError] = useState("");
   const [globalSuccess, setGlobalSuccess] = useState("");
-
   const [confirmConvert, setConfirmConvert] = useState(null);
   const [converting, setConverting] = useState(false);
   const [convertError, setConvertError] = useState("");
-
   const [openMenuKey, setOpenMenuKey] = useState(null);
   const [openUpKey, setOpenUpKey] = useState(null);
 
   const invoices = data?.invoices || [];
 
-  // Close any open overflow menu when clicking anywhere that isn't the menu itself
-  // or the button that toggles it. This is checked via CSS class rather than a single
-  // wrapping ref, since the preview modal's menu renders in a separate part of the DOM
-  // tree (outside .inv-page) and a single containing ref would incorrectly treat clicks
-  // inside the modal as "outside" the menu system.
   useEffect(() => {
     function handleOutsideClick(e) {
       const clickedInsideMenu = e.target.closest(".more-menu, .preview-more-menu");
@@ -231,20 +265,10 @@ export default function Invoices() {
   function toggleMenu(key, e) {
     e.stopPropagation();
     const isClosing = openMenuKey === key;
-
-    if (isClosing) {
-      setOpenMenuKey(null);
-      return;
-    }
-
-    // Estimate the menu's height (roughly 4-5 items tall, ~210px max) and check
-    // whether there's enough room below the clicked button in the viewport. If not,
-    // flip the menu to open upward instead so it never gets clipped or pushed offscreen.
+    if (isClosing) { setOpenMenuKey(null); return; }
     const btnRect = e.currentTarget.getBoundingClientRect();
-    const estimatedMenuHeight = 220;
     const spaceBelow = window.innerHeight - btnRect.bottom;
-
-    setOpenUpKey(spaceBelow < estimatedMenuHeight ? key : null);
+    setOpenUpKey(spaceBelow < 220 ? key : null);
     setOpenMenuKey(key);
   }
 
@@ -254,47 +278,25 @@ export default function Invoices() {
   }
 
   function fmt(n) {
-    return (n || 0).toLocaleString("en-AU", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    return (n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   function formatDate(dateStr) {
     if (!dateStr) return "—";
-    return new Date(dateStr).toLocaleDateString("en-AU", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+    return new Date(dateStr).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
   }
 
-  function findById(id) {
-    return invoices.find((i) => i._id === id);
-  }
+  function findById(id) { return invoices.find((i) => i._id === id); }
 
   function jumpToLinked(id) {
     const target = findById(id);
-    if (!target) {
-      setGlobalError("That linked document could not be found.");
-      setTimeout(() => setGlobalError(""), 4000);
-      return;
-    }
-    const idx = invoices.indexOf(target);
-    openPreview(target, idx);
+    if (!target) { setGlobalError("That linked document could not be found."); setTimeout(() => setGlobalError(""), 4000); return; }
+    openPreview(target, invoices.indexOf(target));
   }
 
   async function generatePdfBlob(invoice) {
     return await pdf(
-      <InvoicePDF
-        invoice={invoice}
-        settings={data.settings}
-        totals={{
-          subtotal: invoice.subtotal || 0,
-          gst: invoice.gst || 0,
-          total: invoice.total || 0,
-        }}
-      />
+      <InvoicePDF invoice={invoice} settings={data.settings} totals={{ subtotal: invoice.subtotal || 0, gst: invoice.gst || 0, total: invoice.total || 0 }} />
     ).toBlob();
   }
 
@@ -305,59 +307,52 @@ export default function Invoices() {
     setPdfPages([]);
     setDeleteError("");
     setPdfLoading(true);
-
     try {
       await loadPdfJs();
-
       const blob = await generatePdfBlob(invoice);
       const arrayBuffer = await blob.arrayBuffer();
-
-      const pdfDoc = await window.pdfjsLib.getDocument({
-        data: new Uint8Array(arrayBuffer),
-      }).promise;
-
+      const pdfDoc = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
       const pages = [];
-
       for (let i = 1; i <= pdfDoc.numPages; i++) {
         const page = await pdfDoc.getPage(i);
         const viewport = page.getViewport({ scale: 3 });
-
         const canvas = document.createElement("canvas");
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-
-        await page.render({
-          canvasContext: canvas.getContext("2d"),
-          viewport,
-        }).promise;
-
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
         pages.push(canvas.toDataURL("image/png"));
       }
-
       setPdfPages(pages);
     } catch (e) {
       console.error("PDF preview error:", e);
       setGlobalError("Could not generate preview.");
       setTimeout(() => setGlobalError(""), 4000);
     }
-
     setPdfLoading(false);
   }
 
   function closePreview() {
-    setPreview(null);
-    setPreviewIndex(null);
-    setPdfPages([]);
-    setPdfLoading(false);
-    setConfirmDelete(false);
-    setDeleteError("");
-    setDeleting(false);
-    setOpenMenuKey(null);
+    setPreview(null); setPreviewIndex(null); setPdfPages([]); setPdfLoading(false);
+    setConfirmDelete(false); setDeleteError(""); setDeleting(false); setOpenMenuKey(null);
+  }
+
+  // If isReadOnly, intercept create/edit/convert and show the upgrade prompt instead.
+  function goToCreate() {
+    if (isReadOnly) { showUpgradePrompt(); return; }
+    navigate("/create");
   }
 
   function goToEdit(invoice) {
     closeMenu();
+    if (isReadOnly) { showUpgradePrompt(); return; }
     navigate("/create", { state: { editingInvoice: invoice } });
+  }
+
+  function openConvertConfirm(quote) {
+    closeMenu();
+    if (isReadOnly) { showUpgradePrompt(); return; }
+    setConvertError("");
+    setConfirmConvert(quote);
   }
 
   async function downloadPDF(invoice) {
@@ -366,11 +361,9 @@ export default function Invoices() {
       const blob = await generatePdfBlob(invoice);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-
       a.href = url;
       a.download = `${invoice.invoiceNumber || "invoice"}.pdf`;
       a.click();
-
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error("Download error:", e);
@@ -385,17 +378,8 @@ export default function Invoices() {
       const blob = await generatePdfBlob(invoice);
       const url = URL.createObjectURL(blob);
       const printWindow = window.open(url);
-
-      if (!printWindow) {
-        setGlobalError("Pop-up blocked. Please allow pop-ups to print.");
-        setTimeout(() => setGlobalError(""), 4000);
-        return;
-      }
-
-      printWindow.onload = () => {
-        printWindow.focus();
-        printWindow.print();
-      };
+      if (!printWindow) { setGlobalError("Pop-up blocked. Please allow pop-ups to print."); setTimeout(() => setGlobalError(""), 4000); return; }
+      printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
     } catch (e) {
       console.error("Print error:", e);
       setGlobalError("Could not print PDF.");
@@ -405,41 +389,19 @@ export default function Invoices() {
 
   async function confirmDeleteInvoice() {
     if (previewIndex === null || previewIndex === undefined) return;
-
-    setDeleting(true);
-    setDeleteError("");
-
+    setDeleting(true); setDeleteError("");
     const { error } = await deleteInvoice(previewIndex);
-
-    if (error) {
-      setDeleteError(error);
-      setDeleting(false);
-      return;
-    }
-
+    if (error) { setDeleteError(error); setDeleting(false); return; }
     closePreview();
   }
 
-  function openConvertConfirm(quote) {
-    closeMenu();
-    setConvertError("");
-    setConfirmConvert(quote);
-  }
-
-  function openDeleteConfirm() {
-    closeMenu();
-    setConfirmDelete(true);
-  }
+  function openDeleteConfirm() { closeMenu(); setConfirmDelete(true); }
 
   async function handleConvert() {
     if (!confirmConvert) return;
-
-    setConverting(true);
-    setConvertError("");
-
+    setConverting(true); setConvertError("");
     try {
       const invoiceVersion = { ...confirmConvert, type: "Invoice" };
-
       await loadPdfJs();
       const blob = await generatePdfBlob(invoiceVersion);
       const base64 = await new Promise((resolve, reject) => {
@@ -448,31 +410,11 @@ export default function Invoices() {
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
-
-      const totals = {
-        subtotal: confirmConvert.subtotal || 0,
-        gst: confirmConvert.gst || 0,
-        total: confirmConvert.total || 0,
-      };
-
-      const { error, id, invoiceNumber } = await convertQuoteToInvoice(
-        confirmConvert._id,
-        invoiceVersion,
-        totals,
-        base64
-      );
-
-      if (error) {
-        setConvertError(error);
-        setConverting(false);
-        return;
-      }
-
-      setConfirmConvert(null);
-      setConverting(false);
-
+      const totals = { subtotal: confirmConvert.subtotal || 0, gst: confirmConvert.gst || 0, total: confirmConvert.total || 0 };
+      const { error, invoiceNumber } = await convertQuoteToInvoice(confirmConvert._id, invoiceVersion, totals, base64);
+      if (error) { setConvertError(error); setConverting(false); return; }
+      setConfirmConvert(null); setConverting(false);
       if (preview && preview._id === confirmConvert._id) closePreview();
-
       setGlobalSuccess(`Converted to ${invoiceNumber}. The original quote has been kept.`);
       setTimeout(() => setGlobalSuccess(""), 5000);
     } catch (e) {
@@ -484,25 +426,11 @@ export default function Invoices() {
 
   const allInvoices = invoices.filter((i) => i.type === "Invoice" || !i.type);
   const quotes = invoices.filter((i) => i.type === "Quote");
-
-  const totalRevenue = allInvoices.reduce(
-    (acc, inv) => acc + (inv.total || 0),
-    0
-  );
-
-  const sorted = [...invoices].sort(
-    (a, b) => new Date(b.savedAt || b.date) - new Date(a.savedAt || a.date)
-  );
-
+  const totalRevenue = allInvoices.reduce((acc, inv) => acc + (inv.total || 0), 0);
+  const sorted = [...invoices].sort((a, b) => new Date(b.savedAt || b.date) - new Date(a.savedAt || a.date));
   const filtered = sorted.filter((invoice) => {
-    const matchesType =
-      filter === "All" ||
-      (filter === "Invoice" && (invoice.type === "Invoice" || !invoice.type)) ||
-      (filter === "Quote" && invoice.type === "Quote");
-
-    const clientName = (invoice.billToName || "").toLowerCase();
-    const matchesSearch = clientName.includes(searchTerm.toLowerCase());
-
+    const matchesType = filter === "All" || (filter === "Invoice" && (invoice.type === "Invoice" || !invoice.type)) || (filter === "Quote" && invoice.type === "Quote");
+    const matchesSearch = (invoice.billToName || "").toLowerCase().includes(searchTerm.toLowerCase());
     return matchesType && matchesSearch;
   });
 
@@ -513,48 +441,41 @@ export default function Invoices() {
       <div className="inv-page">
         <div className="inv-header">
           <h1 className="inv-title">Invoices & Quotes</h1>
-          <button className="inv-create-btn" onClick={() => navigate("/create")}>
+          <button className="inv-create-btn" onClick={goToCreate}>
             + Create
           </button>
         </div>
+
+        {/* Read-only banner — only shown when trial has expired */}
+        {isReadOnly && (
+          <div className="inv-readonly-banner">
+            <span className="inv-readonly-banner-text">
+              <strong>Your trial has ended.</strong> You can still view, download and print your existing records — subscribe to create and edit invoices.
+            </span>
+            <button className="inv-readonly-subscribe-btn" onClick={showUpgradePrompt}>
+              Subscribe →
+            </button>
+          </div>
+        )}
 
         {globalError && <div className="inv-global-error">⚠ {globalError}</div>}
         {globalSuccess && <div className="inv-global-success">✓ {globalSuccess}</div>}
 
         <div className="inv-stats">
-          <div className="inv-stat">
-            <p>Invoices</p>
-            <h2>{allInvoices.length}</h2>
-          </div>
-          <div className="inv-stat">
-            <p>Quotes</p>
-            <h2>{quotes.length}</h2>
-          </div>
-          <div className="inv-stat revenue-stat">
-            <p>Revenue</p>
-            <h2>${fmt(totalRevenue)}</h2>
-          </div>
+          <div className="inv-stat"><p>Invoices</p><h2>{allInvoices.length}</h2></div>
+          <div className="inv-stat"><p>Quotes</p><h2>{quotes.length}</h2></div>
+          <div className="inv-stat revenue-stat"><p>Revenue</p><h2>${fmt(totalRevenue)}</h2></div>
         </div>
 
         <div className="inv-tools">
           <div className="inv-filters">
             {["All", "Invoice", "Quote"].map((option) => (
-              <button
-                key={option}
-                className={`inv-filter-btn${filter === option ? " active" : ""}`}
-                onClick={() => setFilter(option)}
-              >
+              <button key={option} className={`inv-filter-btn${filter === option ? " active" : ""}`} onClick={() => setFilter(option)}>
                 {option === "All" ? "All" : `${option}s`}
               </button>
             ))}
           </div>
-
-          <input
-            className="inv-search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by client..."
-          />
+          <input className="inv-search" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by client..." />
         </div>
 
         <div className="inv-card">
@@ -568,12 +489,7 @@ export default function Invoices() {
                 <table className="inv-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Type</th>
-                      <th>Client</th>
-                      <th>Date</th>
-                      <th>Total</th>
-                      <th>Actions</th>
+                      <th>#</th><th>Type</th><th>Client</th><th>Date</th><th>Total</th><th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -587,61 +503,31 @@ export default function Invoices() {
                         <tr key={invoice._id || origIndex}>
                           <td>
                             <div className="inv-num-cell">
-                              <span style={{ fontWeight: 500, color: "#111" }}>
-                                {invoice.invoiceNumber}
-                              </span>
+                              <span style={{ fontWeight: 500, color: "#111" }}>{invoice.invoiceNumber}</span>
                               {isQuote && invoice.convertedToInvoiceId && (
-                                <span
-                                  className="link-badge"
-                                  onClick={() => jumpToLinked(invoice.convertedToInvoiceId)}
-                                >
-                                  → {invoice.convertedToInvoiceNumber}
-                                </span>
+                                <span className="link-badge" onClick={() => jumpToLinked(invoice.convertedToInvoiceId)}>→ {invoice.convertedToInvoiceNumber}</span>
                               )}
                               {!isQuote && invoice.convertedFromQuoteId && (
-                                <span
-                                  className="link-badge"
-                                  onClick={() => jumpToLinked(invoice.convertedFromQuoteId)}
-                                >
-                                  ← {invoice.convertedFromQuoteNumber}
-                                </span>
+                                <span className="link-badge" onClick={() => jumpToLinked(invoice.convertedFromQuoteId)}>← {invoice.convertedFromQuoteNumber}</span>
                               )}
                             </div>
                           </td>
-                          <td>
-                            <span className={`type-badge ${isQuote ? "type-quote" : "type-invoice"}`}>
-                              {isQuote ? "Quote" : "Invoice"}
-                            </span>
-                          </td>
-                          <td className="inv-client-cell">
-                            {invoice.billToName || "—"}
-                          </td>
+                          <td><span className={`type-badge ${isQuote ? "type-quote" : "type-invoice"}`}>{isQuote ? "Quote" : "Invoice"}</span></td>
+                          <td className="inv-client-cell">{invoice.billToName || "—"}</td>
                           <td style={{ color: "#888" }}>{formatDate(invoice.date)}</td>
                           <td style={{ fontWeight: 500 }}>${fmt(invoice.total)}</td>
                           <td>
                             <div className="inv-row-actions">
-                              <button className="btn-preview" onClick={() => openPreview(invoice, origIndex)}>
-                                Preview
-                              </button>
-
+                              <button className="btn-preview" onClick={() => openPreview(invoice, origIndex)}>Preview</button>
                               <div className="more-wrap">
-                                <button
-                                  className={`more-btn${openMenuKey === rowKey ? " open" : ""}`}
-                                  onClick={(e) => toggleMenu(rowKey, e)}
-                                  aria-label="More actions"
-                                >
-                                  ⋯
-                                </button>
+                                <button className={`more-btn${openMenuKey === rowKey ? " open" : ""}`} onClick={(e) => toggleMenu(rowKey, e)} aria-label="More actions">⋯</button>
                                 <div className={`more-menu${openMenuKey === rowKey ? " show" : ""}${openUpKey === rowKey ? " open-up" : ""}`}>
-                                  <button className="more-menu-item" onClick={() => goToEdit(invoice)}>
-                                    <span className="mi-icon">✎</span> Edit
+                                  <button className={`more-menu-item${isReadOnly ? " locked-item" : ""}`} onClick={() => goToEdit(invoice)}>
+                                    <span className="mi-icon">{isReadOnly ? "✎" : "✎"}</span> Edit
                                   </button>
                                   {canConvert && (
-                                    <button
-                                      className="more-menu-item convert-item"
-                                      onClick={() => openConvertConfirm(invoice)}
-                                    >
-                                      <span className="mi-icon">→</span> Convert to invoice
+                                    <button className={`more-menu-item convert-item${isReadOnly ? " locked-item" : ""}`} onClick={() => openConvertConfirm(invoice)}>
+                                      <span className="mi-icon">{isReadOnly ? "→" : "→"}</span> Convert to invoice
                                     </button>
                                   )}
                                   <button className="more-menu-item" onClick={() => downloadPDF(invoice)}>
@@ -651,15 +537,7 @@ export default function Invoices() {
                                     <span className="mi-icon">⎙</span> Print
                                   </button>
                                   <div className="more-menu-divider" />
-                                  <button
-                                    className="more-menu-item delete-item"
-                                    onClick={() => {
-                                      closeMenu();
-                                      setPreview(invoice);
-                                      setPreviewIndex(origIndex);
-                                      setConfirmDelete(true);
-                                    }}
-                                  >
+                                  <button className="more-menu-item delete-item" onClick={() => { closeMenu(); setPreview(invoice); setPreviewIndex(origIndex); setConfirmDelete(true); }}>
                                     <span className="mi-icon">✕</span> Delete
                                   </button>
                                 </div>
@@ -685,30 +563,12 @@ export default function Invoices() {
                       <div className="inv-mobile-top">
                         <div className="inv-mobile-left">
                           <div className="inv-mobile-num">
-                            <span className={`type-badge ${isQuote ? "type-quote" : "type-invoice"}`}>
-                              {isQuote ? "QUO" : "INV"}
-                            </span>
+                            <span className={`type-badge ${isQuote ? "type-quote" : "type-invoice"}`}>{isQuote ? "QUO" : "INV"}</span>
                             {invoice.invoiceNumber}
                           </div>
-                          <div className="inv-mobile-client">
-                            {invoice.billToName || "No client"}
-                          </div>
-                          {isQuote && invoice.convertedToInvoiceId && (
-                            <div
-                              className="inv-mobile-link"
-                              onClick={() => jumpToLinked(invoice.convertedToInvoiceId)}
-                            >
-                              → Converted to {invoice.convertedToInvoiceNumber}
-                            </div>
-                          )}
-                          {!isQuote && invoice.convertedFromQuoteId && (
-                            <div
-                              className="inv-mobile-link"
-                              onClick={() => jumpToLinked(invoice.convertedFromQuoteId)}
-                            >
-                              ← From {invoice.convertedFromQuoteNumber}
-                            </div>
-                          )}
+                          <div className="inv-mobile-client">{invoice.billToName || "No client"}</div>
+                          {isQuote && invoice.convertedToInvoiceId && (<div className="inv-mobile-link" onClick={() => jumpToLinked(invoice.convertedToInvoiceId)}>→ Converted to {invoice.convertedToInvoiceNumber}</div>)}
+                          {!isQuote && invoice.convertedFromQuoteId && (<div className="inv-mobile-link" onClick={() => jumpToLinked(invoice.convertedFromQuoteId)}>← From {invoice.convertedFromQuoteNumber}</div>)}
                         </div>
                         <div className="inv-mobile-right">
                           <div className="inv-mobile-total">${fmt(invoice.total)}</div>
@@ -716,46 +576,22 @@ export default function Invoices() {
                         </div>
                       </div>
                       <div className="inv-mobile-actions">
-                        <button className="btn-preview" onClick={() => openPreview(invoice, origIndex)}>
-                          Preview
-                        </button>
-
+                        <button className="btn-preview" onClick={() => openPreview(invoice, origIndex)}>Preview</button>
                         <div className="more-wrap">
-                          <button
-                            className={`more-btn${openMenuKey === mobileKey ? " open" : ""}`}
-                            onClick={(e) => toggleMenu(mobileKey, e)}
-                            aria-label="More actions"
-                          >
-                            ⋯
-                          </button>
+                          <button className={`more-btn${openMenuKey === mobileKey ? " open" : ""}`} onClick={(e) => toggleMenu(mobileKey, e)} aria-label="More actions">⋯</button>
                           <div className={`more-menu${openMenuKey === mobileKey ? " show" : ""}${openUpKey === mobileKey ? " open-up" : ""}`}>
-                            <button className="more-menu-item" onClick={() => goToEdit(invoice)}>
-                              <span className="mi-icon">✎</span> Edit
+                            <button className={`more-menu-item${isReadOnly ? " locked-item" : ""}`} onClick={() => goToEdit(invoice)}>
+                              <span className="mi-icon">{isReadOnly ? "✎" : "✎"}</span> Edit
                             </button>
                             {canConvert && (
-                              <button
-                                className="more-menu-item convert-item"
-                                onClick={() => openConvertConfirm(invoice)}
-                              >
-                                <span className="mi-icon">→</span> Convert to invoice
+                              <button className={`more-menu-item convert-item${isReadOnly ? " locked-item" : ""}`} onClick={() => openConvertConfirm(invoice)}>
+                                <span className="mi-icon">{isReadOnly ? "→" : "→"}</span> Convert to invoice
                               </button>
                             )}
-                            <button className="more-menu-item" onClick={() => downloadPDF(invoice)}>
-                              <span className="mi-icon">↓</span> Download PDF
-                            </button>
-                            <button className="more-menu-item" onClick={() => printPDF(invoice)}>
-                              <span className="mi-icon">⎙</span> Print
-                            </button>
+                            <button className="more-menu-item" onClick={() => downloadPDF(invoice)}><span className="mi-icon">↓</span> Download PDF</button>
+                            <button className="more-menu-item" onClick={() => printPDF(invoice)}><span className="mi-icon">⎙</span> Print</button>
                             <div className="more-menu-divider" />
-                            <button
-                              className="more-menu-item delete-item"
-                              onClick={() => {
-                                closeMenu();
-                                setPreview(invoice);
-                                setPreviewIndex(origIndex);
-                                setConfirmDelete(true);
-                              }}
-                            >
+                            <button className="more-menu-item delete-item" onClick={() => { closeMenu(); setPreview(invoice); setPreviewIndex(origIndex); setConfirmDelete(true); }}>
                               <span className="mi-icon">✕</span> Delete
                             </button>
                           </div>
@@ -776,107 +612,43 @@ export default function Invoices() {
             <div className="preview-topbar">
               <div className="preview-topbar-left">
                 <div className="preview-modal-num">{preview.invoiceNumber}</div>
-                <div className="preview-modal-meta">
-                  {preview.billToName || "No client"} · {formatDate(preview.date)}
-                </div>
-                {preview.type === "Quote" && preview.convertedToInvoiceId && (
-                  <span
-                    className="preview-modal-link"
-                    onClick={() => jumpToLinked(preview.convertedToInvoiceId)}
-                  >
-                    → Converted to {preview.convertedToInvoiceNumber}
-                  </span>
-                )}
-                {preview.type !== "Quote" && preview.convertedFromQuoteId && (
-                  <span
-                    className="preview-modal-link"
-                    onClick={() => jumpToLinked(preview.convertedFromQuoteId)}
-                  >
-                    ← From quote {preview.convertedFromQuoteNumber}
-                  </span>
-                )}
+                <div className="preview-modal-meta">{preview.billToName || "No client"} · {formatDate(preview.date)}</div>
+                {preview.type === "Quote" && preview.convertedToInvoiceId && (<span className="preview-modal-link" onClick={() => jumpToLinked(preview.convertedToInvoiceId)}>→ Converted to {preview.convertedToInvoiceNumber}</span>)}
+                {preview.type !== "Quote" && preview.convertedFromQuoteId && (<span className="preview-modal-link" onClick={() => jumpToLinked(preview.convertedFromQuoteId)}>← From quote {preview.convertedFromQuoteNumber}</span>)}
               </div>
-
               <div className="preview-topbar-right">
                 {preview.type === "Quote" && !preview.convertedToInvoiceId ? (
-                  <button
-                    className="preview-primary-btn convert"
-                    onClick={() => openConvertConfirm(preview)}
-                  >
-                    → Convert to invoice
+                  <button className="preview-primary-btn convert" onClick={() => openConvertConfirm(preview)}>
+                    {isReadOnly ? "→ Convert to invoice" : "→ Convert to invoice"}
                   </button>
                 ) : (
-                  <button className="preview-primary-btn" onClick={() => downloadPDF(preview)}>
-                    ↓ Download PDF
-                  </button>
+                  <button className="preview-primary-btn" onClick={() => downloadPDF(preview)}>↓ Download PDF</button>
                 )}
-
                 <div className="preview-more-wrap">
-                  <button
-                    className={`preview-more-btn${openMenuKey === "previewMenu" ? " open" : ""}`}
-                    onClick={(e) => toggleMenu("previewMenu", e)}
-                    aria-label="More actions"
-                  >
-                    ⋯
-                  </button>
+                  <button className={`preview-more-btn${openMenuKey === "previewMenu" ? " open" : ""}`} onClick={(e) => toggleMenu("previewMenu", e)} aria-label="More actions">⋯</button>
                   <div className={`preview-more-menu${openMenuKey === "previewMenu" ? " show" : ""}`}>
-                    <button className="more-menu-item" onClick={() => goToEdit(preview)}>
-                      <span className="mi-icon">✎</span> Edit
+                    <button className={`more-menu-item${isReadOnly ? " locked-item" : ""}`} onClick={() => goToEdit(preview)}>
+                      <span className="mi-icon">{isReadOnly ? "✎" : "✎"}</span> Edit
                     </button>
                     {(preview.type !== "Quote" || preview.convertedToInvoiceId) && (
-                      <button className="more-menu-item" onClick={() => downloadPDF(preview)}>
-                        <span className="mi-icon">↓</span> Download PDF
-                      </button>
+                      <button className="more-menu-item" onClick={() => downloadPDF(preview)}><span className="mi-icon">↓</span> Download PDF</button>
                     )}
-                    <button className="more-menu-item" onClick={() => printPDF(preview)}>
-                      <span className="mi-icon">⎙</span> Print
-                    </button>
+                    <button className="more-menu-item" onClick={() => printPDF(preview)}><span className="mi-icon">⎙</span> Print</button>
                     <div className="more-menu-divider" />
-                    <button className="more-menu-item delete-item" onClick={openDeleteConfirm}>
-                      <span className="mi-icon">✕</span> Delete
-                    </button>
+                    <button className="more-menu-item delete-item" onClick={openDeleteConfirm}><span className="mi-icon">✕</span> Delete</button>
                   </div>
                 </div>
-
-                <button className="preview-close" onClick={closePreview}>
-                  ✕
-                </button>
+                <button className="preview-close" onClick={closePreview}>✕</button>
               </div>
             </div>
-
             <div className="preview-body">
               {pdfLoading && (
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: 300,
-                  color: "#aaa",
-                  fontSize: "0.875rem",
-                  gap: 10,
-                  flexDirection: "column",
-                }}>
-                  <div style={{
-                    width: 28,
-                    height: 28,
-                    border: "3px solid #ebebeb",
-                    borderTopColor: "#111",
-                    borderRadius: "50%",
-                    animation: "spin 0.7s linear infinite",
-                  }} />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: "#aaa", fontSize: "0.875rem", gap: 10, flexDirection: "column" }}>
+                  <div style={{ width: 28, height: 28, border: "3px solid #ebebeb", borderTopColor: "#111", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
                   Loading preview...
                 </div>
               )}
-
-              {!pdfLoading &&
-                pdfPages.map((src, i) => (
-                  <img
-                    key={i}
-                    src={src}
-                    alt={`Page ${i + 1}`}
-                    className="preview-page-img"
-                  />
-                ))}
+              {!pdfLoading && pdfPages.map((src, i) => (<img key={i} src={src} alt={`Page ${i + 1}`} className="preview-page-img" />))}
             </div>
           </div>
         </div>
@@ -886,26 +658,11 @@ export default function Invoices() {
         <div className="confirm-overlay" onClick={() => !deleting && setConfirmDelete(false)}>
           <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="confirm-title">Delete this document?</h3>
-            <p className="confirm-text">
-              Are you sure you want to delete {preview?.invoiceNumber}? This action cannot be undone.
-            </p>
-
+            <p className="confirm-text">Are you sure you want to delete {preview?.invoiceNumber}? This action cannot be undone.</p>
             {deleteError && <div className="confirm-error">⚠ {deleteError}</div>}
-
             <div className="confirm-actions">
-              <button
-                className="confirm-cancel"
-                onClick={() => setConfirmDelete(false)}
-                disabled={deleting}
-              >
-                Cancel
-              </button>
-
-              <button
-                className="confirm-delete"
-                onClick={confirmDeleteInvoice}
-                disabled={deleting}
-              >
+              <button className="confirm-cancel" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
+              <button className="confirm-delete" onClick={confirmDeleteInvoice} disabled={deleting}>
                 {deleting && <div className="confirm-spinner" />}
                 {deleting ? "Deleting..." : "Delete"}
               </button>
@@ -918,27 +675,11 @@ export default function Invoices() {
         <div className="confirm-overlay" onClick={() => !converting && setConfirmConvert(null)}>
           <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="confirm-title">Convert to invoice?</h3>
-            <p className="confirm-text">
-              This creates a new invoice from <strong>{confirmConvert.invoiceNumber}</strong> with its own invoice number.
-              The original quote will stay exactly as it is — nothing is deleted.
-            </p>
-
+            <p className="confirm-text">This creates a new invoice from <strong>{confirmConvert.invoiceNumber}</strong> with its own invoice number. The original quote will stay exactly as it is — nothing is deleted.</p>
             {convertError && <div className="confirm-error">⚠ {convertError}</div>}
-
             <div className="confirm-actions">
-              <button
-                className="confirm-cancel"
-                onClick={() => setConfirmConvert(null)}
-                disabled={converting}
-              >
-                Cancel
-              </button>
-
-              <button
-                className="confirm-convert"
-                onClick={handleConvert}
-                disabled={converting}
-              >
+              <button className="confirm-cancel" onClick={() => setConfirmConvert(null)} disabled={converting}>Cancel</button>
+              <button className="confirm-convert" onClick={handleConvert} disabled={converting}>
                 {converting && <div className="confirm-spinner" />}
                 {converting ? "Converting..." : "Convert to Invoice"}
               </button>

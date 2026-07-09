@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
+import logo from "../assets/paivleblack.png";
 
 const styles = `
 .dash,
@@ -84,16 +85,15 @@ const styles = `
 }
 
 .welcome-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background: #111;
-  color: #fff;
   display: flex;
-  align-items: center;
   justify-content: center;
-  font-size: 28px;
+  align-items: center;
   margin: 0 auto 1.5rem;
+}
+
+.welcome-logo {
+  width: 180px;
+  height: auto;
 }
 
 .welcome-wrap h1 {
@@ -836,9 +836,11 @@ export default function Dashboard() {
 
         <div className="dash">
           <div className="welcome-wrap">
-            <div className="welcome-icon">⚡</div>
+            <div className="welcome-icon">
+  <img src={logo} alt="Paivle Logo" className="welcome-logo" />
+</div>
 
-            <h1>Welcome to Payvle</h1>
+            <h1>Welcome to Paivle</h1>
 
             <p>
               You're almost ready to send your first invoice. It only takes 2

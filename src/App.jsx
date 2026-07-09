@@ -1,29 +1,45 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./layout/Layout";
 import AuthGate from "./components/AuthGate";
-import Dashboard from "./pages/Dashboard";
-import Settings from "./pages/Settings";
-import CreateInvoice from "./pages/CreateInvoice";
-import Invoices from "./pages/Invoices";
+
+// Public routes — loaded eagerly since they're lightweight and may be
+// accessed before the user is authenticated (no benefit to lazy loading them)
 import ResetPassword from "./pages/ResetPassword";
+import Terms from "./pages/Terms";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+
+// Protected routes — lazy loaded so only Dashboard code downloads on first
+// login. Invoices, Settings and CreateInvoice are fetched in the background
+// while the user is looking at the dashboard, so navigation to them is instant.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Settings = lazy(() => import("./pages/Settings"));
+const CreateInvoice = lazy(() => import("./pages/CreateInvoice"));
+const Invoices = lazy(() => import("./pages/Invoices"));
 
 export default function App() {
   return (
     <Routes>
-      {/* Public route — outside AuthGate so unauthenticated users can reset password */}
+      {/* Public routes — outside AuthGate */}
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
 
-      {/* Protected routes — wrapped in AuthGate */}
+      {/* Protected routes — wrapped in AuthGate and Suspense.
+          fallback={null} means no flash of a spinner between navigations
+          since each page already shows its own skeleton loading state. */}
       <Route path="/*" element={
         <AuthGate>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/create" element={<CreateInvoice />} />
-              <Route path="/invoices" element={<Invoices />} />
-            </Route>
-          </Routes>
+          <Suspense fallback={null}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/create" element={<CreateInvoice />} />
+                <Route path="/invoices" element={<Invoices />} />
+              </Route>
+            </Routes>
+          </Suspense>
         </AuthGate>
       } />
     </Routes>
