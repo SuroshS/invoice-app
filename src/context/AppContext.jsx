@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 const AppContext = createContext();
 
 const defaultSettings = {
+  fullName: "",
   businessName: "",
   abn: "",
   qbcc: "",
@@ -38,12 +39,7 @@ function readCache(userId) {
 function writeCache(userId, data) {
   if (!userId) return;
   try {
-    // Strip pdfBase64 blobs — they're large and not needed for the initial render
-    const lean = {
-      settings: data.settings,
-      invoices: data.invoices.map(({ pdfBase64: _, ...rest }) => rest),
-    };
-    localStorage.setItem(cacheKey(userId), JSON.stringify(lean));
+    localStorage.setItem(cacheKey(userId), JSON.stringify(data));
   } catch { /* storage full — silently skip */ }
 }
 
@@ -180,12 +176,12 @@ export function AppProvider({ children }) {
     return { url: urlData.publicUrl, error: null };
   }
 
-  async function saveInvoice(invoice, totals, pdfBase64 = null) {
+  async function saveInvoice(invoice, totals) {
     if (!userId) return { error: "Not logged in." };
     const isQuote = invoice.type === "Quote";
     const invoiceRecord = {
       ...invoice, total: totals.total, subtotal: totals.subtotal, gst: totals.gst,
-      savedAt: new Date().toISOString(), ...(pdfBase64 ? { pdfBase64 } : {}),
+      savedAt: new Date().toISOString(),
     };
     const updatedSettings = {
       ...data.settings,
@@ -202,14 +198,13 @@ export function AppProvider({ children }) {
     return { error: null, id: inserted.id, invoiceNumber: invoice.invoiceNumber };
   }
 
-  async function updateInvoice(invoiceDbId, invoice, totals, pdfBase64 = null) {
+  async function updateInvoice(invoiceDbId, invoice, totals) {
     if (!userId) return { error: "Not logged in." };
     if (!invoiceDbId) return { error: "Missing invoice id — cannot update." };
     const existing = data.invoices.find((i) => i._id === invoiceDbId);
     const invoiceRecord = {
       ...invoice, total: totals.total, subtotal: totals.subtotal, gst: totals.gst,
       savedAt: existing?.savedAt || new Date().toISOString(), updatedAt: new Date().toISOString(),
-      ...(pdfBase64 ? { pdfBase64 } : existing?.pdfBase64 ? { pdfBase64: existing.pdfBase64 } : {}),
     };
     const { error } = await supabase.from("invoices").update({ data: invoiceRecord }).eq("id", invoiceDbId).eq("user_id", userId);
     if (error) { console.error("Invoice update error:", error); return { error: "Failed to update invoice. Please try again." }; }
@@ -219,7 +214,7 @@ export function AppProvider({ children }) {
     return { error: null, invoiceNumber: invoice.invoiceNumber };
   }
 
-  async function convertQuoteToInvoice(quoteDbId, invoice, totals, pdfBase64 = null) {
+  async function convertQuoteToInvoice(quoteDbId, invoice, totals) {
     if (!userId) return { error: "Not logged in." };
     if (!quoteDbId) return { error: "Missing quote id — cannot convert." };
     const quote = data.invoices.find((i) => i._id === quoteDbId);
@@ -229,7 +224,7 @@ export function AppProvider({ children }) {
       ...invoice, type: "Invoice", invoiceNumber: newInvoiceNumber,
       total: totals.total, subtotal: totals.subtotal, gst: totals.gst,
       savedAt: new Date().toISOString(), convertedFromQuoteId: quoteDbId,
-      convertedFromQuoteNumber: quote.invoiceNumber, ...(pdfBase64 ? { pdfBase64 } : {}),
+      convertedFromQuoteNumber: quote.invoiceNumber,
     };
     const updatedSettings = { ...data.settings, nextInvoiceNumber: data.settings.nextInvoiceNumber + 1 };
     const { data: inserted, error: insertError } = await supabase.from("invoices").insert({ user_id: userId, data: invoiceRecord }).select("id").single();

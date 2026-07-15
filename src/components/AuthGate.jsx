@@ -150,6 +150,7 @@ const UPGRADE_FEATURES = [
 
 export default function AuthGate({ children }) {
   const [mode, setMode] = useState("login");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -267,12 +268,19 @@ export default function AuthGate({ children }) {
 
   async function handleSignup() {
     setError(""); setSuccess("");
-    if (!email || !password) { setError("Please fill in all fields."); return; }
+    const trimmedFullName = fullName.trim();
+    if (!trimmedFullName || !email || !password) { setError("Please fill in all fields."); return; }
+    if (trimmedFullName.length < 2) { setError("Full name must be at least 2 characters."); return; }
+    if (trimmedFullName.length > 100) { setError("Full name must be 100 characters or fewer."); return; }
     if (password !== confirmPassword) { setError("Passwords do not match."); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     if (!agreedToTerms) { setError("Please agree to the Terms & Conditions and Privacy Policy to continue."); return; }
     setLoading(true);
-    const { data: signUpData, error } = await supabase.auth.signUp({ email, password });
+    const { data: signUpData, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: trimmedFullName } },
+    });
     if (error) {
       if (error.message.includes("already registered")) setError("An account with this email already exists. Try signing in instead.");
       else setError(error.message);
@@ -282,13 +290,13 @@ export default function AuthGate({ children }) {
     const newUserId = signUpData?.user?.id;
     if (newUserId) {
       const { error: acceptError } = await supabase.from("settings").upsert(
-        { user_id: newUserId, data: { termsAcceptedAt: new Date().toISOString(), policyVersions: { terms: CURRENT_TERMS_VERSION, privacy: CURRENT_PRIVACY_VERSION } }, updated_at: new Date().toISOString() },
+        { user_id: newUserId, data: { fullName: trimmedFullName, termsAcceptedAt: new Date().toISOString(), policyVersions: { terms: CURRENT_TERMS_VERSION, privacy: CURRENT_PRIVACY_VERSION } }, updated_at: new Date().toISOString() },
         { onConflict: "user_id" }
       );
       if (acceptError) console.error("Recording terms acceptance failed (non-fatal):", acceptError);
     }
     setSuccess("Account created! Check your email to confirm your account, then sign in.");
-    setPassword(""); setConfirmPassword(""); setAgreedToTerms(false);
+    setPassword(""); setConfirmPassword(""); setAgreedToTerms(false); setFullName("");
     setLoading(false);
   }
 
@@ -312,7 +320,7 @@ export default function AuthGate({ children }) {
           <div className="upgrade-overlay" onClick={() => setShowUpgradePrompt(false)}>
             <div className="upgrade-modal" onClick={e => e.stopPropagation()}>
               <div className="upgrade-modal-top">
-                <img src={logo} alt="Payvle" className="upgrade-modal-logo" />
+                <img src={logo} alt="Payvle" className="upgrade-modal-logo" width={360} height={142} />
                 <h2 className="upgrade-modal-title">Subscribe to continue</h2>
                 <p className="upgrade-modal-body">
                   Your free trial has ended. Subscribe to create and edit invoices — your existing records are safe and still accessible.
@@ -360,7 +368,7 @@ export default function AuthGate({ children }) {
         <style>{styles}</style>
         <div className="auth-wrap">
           <div className="auth-card">
-            <div className="auth-logo-wrap"><img src={logo} alt="Paivle" className="auth-logo" /></div>
+            <div className="auth-logo-wrap"><img src={logo} alt="Paivle" className="auth-logo" width={360} height={142} /></div>
             <p className="auth-sub">Enter your email and we'll send you a reset link</p>
             {error && <div className="auth-error">{error}</div>}
             {success && <div className="auth-success">{success}</div>}
@@ -389,7 +397,7 @@ export default function AuthGate({ children }) {
       <style>{styles}</style>
       <div className="auth-wrap">
         <div className="auth-card">
-          <div className="auth-logo-wrap"><img src={logo} alt="Paivle" className="auth-logo" /></div>
+          <div className="auth-logo-wrap"><img src={logo} alt="Paivle" className="auth-logo" width={360} height={142} /></div>
           <p className="auth-sub">
             {mode === "login" ? "Sign in to continue" : "Create your account and start invoicing"}
           </p>
@@ -399,9 +407,15 @@ export default function AuthGate({ children }) {
           {error && <div className="auth-error">{error}</div>}
           {success && <div className="auth-success">{success}</div>}
           {info && <div className="auth-info">{info}</div>}
+          {mode === "signup" && (
+            <div className="auth-field">
+              <label>Full Name</label>
+              <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} onKeyDown={handleKey} placeholder="Jane Smith" autoFocus />
+            </div>
+          )}
           <div className="auth-field">
             <label>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} placeholder="you@example.com" autoFocus />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} placeholder="you@example.com" autoFocus={mode !== "signup"} />
           </div>
           <div className="auth-field">
             <label>Password</label>

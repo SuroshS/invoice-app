@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { pdf } from "@react-pdf/renderer";
 import InvoicePDF from "./InvoicePDF";
+import { loadPdfJs } from "../lib/pdfjs";
 
 function buildInvoiceNumber(settings, type) {
   const isQuote = type === "Quote";
@@ -83,27 +84,6 @@ function isFormDirty(form) {
     (item) => item.description || item.rate > 0 || item.qty !== 1
   );
   return Boolean(hasClientInfo || hasNotes || hasLineItemContent);
-}
-
-let pdfjsLoadPromise = null;
-
-function loadPdfJs() {
-  if (window.pdfjsLib) return Promise.resolve();
-  if (pdfjsLoadPromise) return pdfjsLoadPromise;
-
-  pdfjsLoadPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    script.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      resolve();
-    };
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-
-  return pdfjsLoadPromise;
 }
 
 /* Styled to match the app's theme — clean, bold labels, but sized sensibly for a dense form */
@@ -406,6 +386,16 @@ const styles = `
 .ci-preview-spinner { width: 26px; height: 26px; border: 3px solid #ebebeb; border-top-color: #111; border-radius: 50%; animation: ciSpin 0.7s linear infinite; }
 .ci-preview-error { height: 200px; display: flex; align-items: center; justify-content: center; color: #c0392b; font-size: 0.85rem; flex-direction: column; gap: 8px; }
 
+/* Confirm / info modals — same pattern used on the Invoices page */
+.confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 700; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.confirm-modal { width: 100%; max-width: 380px; background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.18); }
+.confirm-title { margin: 0 0 6px; font-size: 1rem; font-weight: 600; color: #111; }
+.confirm-text { margin: 0 0 14px; font-size: 0.85rem; color: #888; line-height: 1.5; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-cancel, .confirm-primary { height: 34px; padding: 0 13px; border-radius: 8px; cursor: pointer; font-family: system-ui; font-size: 0.82rem; font-weight: 600; border: 1px solid #e0e0e0; }
+.confirm-cancel { background: #fff; color: #333; }
+.confirm-primary { background: #111; color: #fff; border-color: #111; }
+
 @media (max-width: 600px) {
   .ci-page { padding: 1rem 1rem 3rem; }
   .ci-header-left h1 { font-size: 1.1rem; }
@@ -484,6 +474,12 @@ export default function CreateInvoice() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
 
+  // Confirm/info modals — replace native window.confirm/window.alert so these
+  // flows match the rest of the app's UI instead of a browser-native dialog.
+  const [pendingTypeSwitch, setPendingTypeSwitch] = useState(null);
+  const [showConvertNotice, setShowConvertNotice] = useState(false);
+  const [confirmCancelEdit, setConfirmCancelEdit] = useState(false);
+
   useEffect(() => {
     loadPdfJs().catch(() => {});
   }, []);
@@ -520,19 +516,24 @@ export default function CreateInvoice() {
     // Invoices list which creates a linked-but-separate record. Editing the type here
     // would just relabel the same document, which isn't what conversion should mean.
     if (isEditing) {
-      window.alert(
-        "To convert a quote into an invoice, use the \"Convert to Invoice\" button on the Invoices page instead — it keeps your original quote and creates a separate invoice."
-      );
+      setShowConvertNotice(true);
       return;
     }
 
-    if (
-      isFormDirty(form) &&
-      !window.confirm("You have unsaved changes. Switching document type will clear this form. Continue?")
-    ) {
+    if (isFormDirty(form)) {
+      setPendingTypeSwitch(newType);
       return;
     }
 
+    setType(newType);
+    setForm(blankForm(newType));
+    setSaveError("");
+    setSaveSuccess("");
+  }
+
+  function confirmTypeSwitch() {
+    const newType = pendingTypeSwitch;
+    setPendingTypeSwitch(null);
     setType(newType);
     setForm(blankForm(newType));
     setSaveError("");
@@ -565,14 +566,15 @@ export default function CreateInvoice() {
   }
 
   function cancelEditing() {
-    if (
-      isFormDirty(form) &&
-      !window.confirm(
-        "Discard changes to this " + (editingInvoice?.type === "Quote" ? "quote" : "invoice") + "?"
-      )
-    ) {
+    if (isFormDirty(form)) {
+      setConfirmCancelEdit(true);
       return;
     }
+    navigate("/invoices");
+  }
+
+  function confirmCancelEditing() {
+    setConfirmCancelEdit(false);
     navigate("/invoices");
   }
 
@@ -612,16 +614,10 @@ export default function CreateInvoice() {
     setPdfLoading(false);
   }
 
-  async function generatePdfBase64() {
+  async function generatePdfBlob() {
     const invoice = { ...form, invoiceNumber };
     const blob = await pdf(<InvoicePDF invoice={invoice} settings={settings} totals={totals} />).toBlob();
-    const base64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(",")[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    return { invoice, blob, base64 };
+    return { invoice, blob };
   }
 
   function triggerDownload(blob, number) {
@@ -635,19 +631,19 @@ export default function CreateInvoice() {
     URL.revokeObjectURL(url);
   }
 
-  // SAVE — writes to Supabase, generates the PDF for storage, but does NOT trigger a
-  // browser download. Used while drafting or making small edits.
+  // SAVE — writes to Supabase but does NOT render a PDF or trigger a browser
+  // download. Used while drafting or making small edits.
   async function handleSave() {
     setSaveError("");
     setSaveSuccess("");
     setSaving(true);
 
     try {
-      const { invoice, base64 } = await generatePdfBase64();
+      const invoice = { ...form, invoiceNumber };
 
       const result = isEditing
-        ? await updateInvoice(editingInvoice._id, invoice, totals, base64)
-        : await saveInvoice(invoice, totals, base64);
+        ? await updateInvoice(editingInvoice._id, invoice, totals)
+        : await saveInvoice(invoice, totals);
 
       if (result.error) {
         setSaveError(result.error);
@@ -681,11 +677,11 @@ export default function CreateInvoice() {
     setExporting(true);
 
     try {
-      const { invoice, blob, base64 } = await generatePdfBase64();
+      const { invoice, blob } = await generatePdfBlob();
 
       const result = isEditing
-        ? await updateInvoice(editingInvoice._id, invoice, totals, base64)
-        : await saveInvoice(invoice, totals, base64);
+        ? await updateInvoice(editingInvoice._id, invoice, totals)
+        : await saveInvoice(invoice, totals);
 
       if (result.error) {
         setSaveError(result.error);
@@ -920,6 +916,46 @@ export default function CreateInvoice() {
               {!pdfLoading && !previewError && pdfPages.map((src, i) => (
                 <img key={i} src={src} alt={`Page ${i + 1}`} className="ci-preview-img" />
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingTypeSwitch && (
+        <div className="confirm-overlay" onClick={() => setPendingTypeSwitch(null)}>
+          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="confirm-title">Switch document type?</h3>
+            <p className="confirm-text">You have unsaved changes. Switching document type will clear this form. Continue?</p>
+            <div className="confirm-actions">
+              <button className="confirm-cancel" onClick={() => setPendingTypeSwitch(null)}>Cancel</button>
+              <button className="confirm-primary" onClick={confirmTypeSwitch}>Continue</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConvertNotice && (
+        <div className="confirm-overlay" onClick={() => setShowConvertNotice(false)}>
+          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="confirm-title">Use "Convert to Invoice" instead</h3>
+            <p className="confirm-text">
+              To convert a quote into an invoice, use the "Convert to Invoice" button on the Invoices page instead — it keeps your original quote and creates a separate invoice.
+            </p>
+            <div className="confirm-actions">
+              <button className="confirm-primary" onClick={() => setShowConvertNotice(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmCancelEdit && (
+        <div className="confirm-overlay" onClick={() => setConfirmCancelEdit(false)}>
+          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="confirm-title">Discard changes?</h3>
+            <p className="confirm-text">Discard changes to this {editingInvoice?.type === "Quote" ? "quote" : "invoice"}?</p>
+            <div className="confirm-actions">
+              <button className="confirm-cancel" onClick={() => setConfirmCancelEdit(false)}>Cancel</button>
+              <button className="confirm-primary" onClick={confirmCancelEditing}>Discard</button>
             </div>
           </div>
         </div>

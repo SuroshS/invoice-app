@@ -87,7 +87,7 @@ export default function PolicyPage({ title, lastUpdated, children }) {
       <style>{styles}</style>
       <div className="policy-wrap">
         <div className="policy-topbar">
-          <img src={logo} alt="Payvle" className="policy-logo" />
+          <img src={logo} alt="Payvle" className="policy-logo" width={360} height={142} />
           <Link to="/" className="policy-back">← Back to Payvle</Link>
         </div>
 

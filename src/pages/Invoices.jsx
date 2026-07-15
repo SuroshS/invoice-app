@@ -3,27 +3,7 @@ import { useApp } from "../context/AppContext";
 import { useNavigate } from "react-router-dom";
 import { pdf } from "@react-pdf/renderer";
 import InvoicePDF from "./InvoicePDF";
-
-let pdfjsLoadPromise = null;
-
-function loadPdfJs() {
-  if (window.pdfjsLib) return Promise.resolve();
-  if (pdfjsLoadPromise) return pdfjsLoadPromise;
-
-  pdfjsLoadPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    script.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      resolve();
-    };
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-
-  return pdfjsLoadPromise;
-}
+import { loadPdfJs } from "../lib/pdfjs";
 
 const styles = `
 .inv-page { box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 2rem; font-family: system-ui, sans-serif; }
@@ -402,16 +382,8 @@ export default function Invoices() {
     setConverting(true); setConvertError("");
     try {
       const invoiceVersion = { ...confirmConvert, type: "Invoice" };
-      await loadPdfJs();
-      const blob = await generatePdfBlob(invoiceVersion);
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
       const totals = { subtotal: confirmConvert.subtotal || 0, gst: confirmConvert.gst || 0, total: confirmConvert.total || 0 };
-      const { error, invoiceNumber } = await convertQuoteToInvoice(confirmConvert._id, invoiceVersion, totals, base64);
+      const { error, invoiceNumber } = await convertQuoteToInvoice(confirmConvert._id, invoiceVersion, totals);
       if (error) { setConvertError(error); setConverting(false); return; }
       setConfirmConvert(null); setConverting(false);
       if (preview && preview._id === confirmConvert._id) closePreview();

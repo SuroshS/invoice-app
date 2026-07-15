@@ -1,7 +1,25 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
+import { loadPdfJs } from "../lib/pdfjs";
 import logo from "../assets/paivleblack.png";
+
+// Once the dashboard is idle, warm up the other routes' JS chunks and the
+// pdf.js CDN script so navigating to them / opening a preview feels instant
+// instead of paying a fresh network fetch on first use.
+function usePrefetchIdle() {
+  useEffect(() => {
+    const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1500));
+    const cancelIdle = window.cancelIdleCallback || clearTimeout;
+    const id = requestIdle(() => {
+      import("./Invoices");
+      import("./Settings");
+      import("./CreateInvoice");
+      loadPdfJs().catch(() => {});
+    });
+    return () => cancelIdle(id);
+  }, []);
+}
 
 const styles = `
 .dash,
@@ -700,6 +718,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { invoices } = data;
 
+  usePrefetchIdle();
+
   const isNewUser = !data.settings.businessName;
 
   const stats = useMemo(() => {
@@ -837,7 +857,7 @@ export default function Dashboard() {
         <div className="dash">
           <div className="welcome-wrap">
             <div className="welcome-icon">
-  <img src={logo} alt="Paivle Logo" className="welcome-logo" />
+  <img src={logo} alt="Paivle Logo" className="welcome-logo" width={360} height={142} />
 </div>
 
             <h1>Welcome to Paivle</h1>

@@ -10,8 +10,8 @@ import Terms from "./pages/Terms";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 
 // Protected routes — lazy loaded so only Dashboard code downloads on first
-// login. Invoices, Settings and CreateInvoice are fetched in the background
-// while the user is looking at the dashboard, so navigation to them is instant.
+// login. Dashboard.jsx prefetches these other chunks (and pdf.js) during
+// idle time once it mounts, so navigation to them is instant in practice.
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Settings = lazy(() => import("./pages/Settings"));
 const CreateInvoice = lazy(() => import("./pages/CreateInvoice"));

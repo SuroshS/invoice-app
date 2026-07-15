@@ -73,6 +73,7 @@ html, body, #root {
 }
 .app-profile-plan.pro { color: #a78bfa; }
 .app-profile-plan.trial { color: #f59e0b; }
+.app-profile-plan.cancelled { color: #f87171; }
 .app-profile-plan.free { color: #888; }
 .app-profile-chevron { color: #555; font-size: 10px; flex-shrink: 0; }
 
@@ -351,15 +352,22 @@ export default function Layout() {
     : daysLeft <= 7 ? { background: "#fef6e4", color: "#a06b10" }
     : { background: "#f0eefe", color: "#533483" };
 
-  // Derive initials and display name from business name
-  const displayName = data?.settings?.businessName || "My Account";
+  // Derive initials and display name from the account holder's full name.
+  // Existing users who signed up before this field existed simply fall back
+  // to the same "My Account" placeholder used previously for a missing name.
+  const displayName = data?.settings?.fullName || "My Account";
   const initials = displayName.slice(0, 2).toUpperCase() || "PA";
 
+  // Plan status — reuses the subscriptionActive/daysLeft state already computed
+  // in AppContext, plus the subscriptionStatus the Stripe webhook already stores,
+  // rather than introducing any new billing logic here.
   const planLabel = subscriptionActive
-    ? { label: "Pro", cls: "pro" }
+    ? { label: "Active", cls: "pro" }
+    : data?.settings?.subscriptionStatus
+    ? { label: "Cancelled", cls: "cancelled" }
     : daysLeft > 0
-    ? { label: `${daysLeft}d trial`, cls: "trial" }
-    : { label: "Free", cls: "free" };
+    ? { label: "Free Trial", cls: "trial" }
+    : { label: "Free Plan", cls: "free" };
 
   // Close popover on outside click
   useEffect(() => {
@@ -383,12 +391,12 @@ export default function Layout() {
     });
   }, []);
 
-  let toastTimer;
+  const toastTimerRef = useRef(null);
   function showToast(msg) {
     setToast(msg);
     setToastVisible(true);
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => setToastVisible(false), 2500);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2500);
   }
 
 
@@ -455,7 +463,7 @@ export default function Layout() {
 
       {/* ── Mobile topbar ── */}
       <div className="app-mobile-topbar">
-        <img src={logo} alt="PAYVLE" className="app-mobile-logo-image" />
+        <img src={logo} alt="PAYVLE" className="app-mobile-logo-image" width={230} height={76} />
         {showTrial && (
           <span className="app-mobile-trial-pill" style={trialColor}>{daysLeft}d left in trial</span>
         )}
@@ -464,7 +472,7 @@ export default function Layout() {
       <div className="app-layout">
         {/* ── Sidebar ── */}
         <aside className="app-sidebar">
-          <img src={logo} alt="PAYVLE" className="app-logo-image" />
+          <img src={logo} alt="PAYVLE" className="app-logo-image" width={230} height={76} />
 
           <nav className="app-nav">
             {NAV_ITEMS.map(({ to, label }) => (
@@ -618,6 +626,12 @@ export default function Layout() {
                 <div className="acct-section">
                   <div className="acct-section-title">Profile</div>
                   <div className="acct-card">
+                    <div className="acct-row">
+                      <div className="acct-row-left">
+                        <div className="acct-row-title">Full name</div>
+                        <div className="acct-row-sub">{data?.settings?.fullName || "Not set"}</div>
+                      </div>
+                    </div>
                     <div className="acct-row">
                       <div className="acct-row-left">
                         <div className="acct-row-title">Email address</div>
