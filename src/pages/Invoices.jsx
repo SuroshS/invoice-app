@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useNavigate } from "react-router-dom";
 import { pdf } from "@react-pdf/renderer";
@@ -227,7 +227,7 @@ export default function Invoices() {
   const [openMenuKey, setOpenMenuKey] = useState(null);
   const [openUpKey, setOpenUpKey] = useState(null);
 
-  const invoices = data?.invoices || [];
+  const invoices = useMemo(() => data.invoices || [], [data.invoices]);
 
   useEffect(() => {
     function handleOutsideClick(e) {
@@ -396,15 +396,20 @@ export default function Invoices() {
     }
   }
 
-  const allInvoices = invoices.filter((i) => i.type === "Invoice" || !i.type);
-  const quotes = invoices.filter((i) => i.type === "Quote");
-  const totalRevenue = allInvoices.reduce((acc, inv) => acc + (inv.total || 0), 0);
-  const sorted = [...invoices].sort((a, b) => new Date(b.savedAt || b.date) - new Date(a.savedAt || a.date));
-  const filtered = sorted.filter((invoice) => {
-    const matchesType = filter === "All" || (filter === "Invoice" && (invoice.type === "Invoice" || !invoice.type)) || (filter === "Quote" && invoice.type === "Quote");
-    const matchesSearch = (invoice.billToName || "").toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesType && matchesSearch;
-  });
+  // Memoized so PDF-preview state churn (pdfPages updating per rendered page,
+  // menu open/close, etc.) doesn't re-filter/re-sort all 50 invoices on every
+  // unrelated re-render — only recomputes when the actual inputs change.
+  const allInvoices = useMemo(() => invoices.filter((i) => i.type === "Invoice" || !i.type), [invoices]);
+  const quotes = useMemo(() => invoices.filter((i) => i.type === "Quote"), [invoices]);
+  const totalRevenue = useMemo(() => allInvoices.reduce((acc, inv) => acc + (inv.total || 0), 0), [allInvoices]);
+  const filtered = useMemo(() => {
+    const sorted = [...invoices].sort((a, b) => new Date(b.savedAt || b.date) - new Date(a.savedAt || a.date));
+    return sorted.filter((invoice) => {
+      const matchesType = filter === "All" || (filter === "Invoice" && (invoice.type === "Invoice" || !invoice.type)) || (filter === "Quote" && invoice.type === "Quote");
+      const matchesSearch = (invoice.billToName || "").toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesType && matchesSearch;
+    });
+  }, [invoices, filter, searchTerm]);
 
   return (
     <>
@@ -610,7 +615,7 @@ export default function Invoices() {
                     <button className="more-menu-item delete-item" onClick={openDeleteConfirm}><span className="mi-icon">✕</span> Delete</button>
                   </div>
                 </div>
-                <button className="preview-close" onClick={closePreview}>✕</button>
+                <button className="preview-close" onClick={closePreview} aria-label="Close preview">✕</button>
               </div>
             </div>
             <div className="preview-body">

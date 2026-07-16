@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useAppInit } from "./AppInitProvider";
 
 const AppContext = createContext();
 
@@ -21,8 +22,6 @@ const defaultSettings = {
   quoteTerms: "",
 };
 
-const TRIAL_DAYS = 14;
-
 // Cache is keyed by user ID — a different user gets a completely different
 // cache entry so their data never bleeds into another user's session.
 function cacheKey(userId) { return `payvle_data_${userId}`; }
@@ -43,77 +42,66 @@ function writeCache(userId, data) {
   } catch { /* storage full — silently skip */ }
 }
 
+// Pure data provider: owns settings/invoices CRUD, the local cache, and
+// subscription status (subscriptionActive lives inside the settings row).
+// It has no opinion about what to render while data isn't ready yet — that
+// decision belongs to AuthGate, which reads `hasInitialData` from here
+// alongside the auth status from AppInitProvider. This file never touches
+// supabase.auth itself — it only reacts to the auth state AppInitProvider
+// resolves, so there's exactly one place in the app deciding who's signed in.
 export function AppProvider({ children }) {
+  const { status: authStatus, userId, trialExpired } = useAppInit();
+
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
+  const [hasInitialData, setHasInitialData] = useState(false);
   const [data, setDataState] = useState({
     settings: defaultSettings,
     invoices: [],
   });
-  const [userId, setUserId] = useState(null);
-  const [daysLeft, setDaysLeft] = useState(TRIAL_DAYS);
   const [subscriptionActive, setSubscriptionActive] = useState(false);
-  const [trialExpired, setTrialExpired] = useState(false);
 
   const loadedForUserRef = useRef(null);
   const isReadOnly = trialExpired && !subscriptionActive;
 
+  // Reacts to the single auth source of truth (AppInitProvider) instead of
+  // running its own supabase.auth listener. Guarded by loadedForUserRef so a
+  // token-refresh event for the same user doesn't re-trigger a fetch.
   useEffect(() => {
-    let mounted = true;
-
-    async function init() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (session?.user) {
-        setUserId(session.user.id);
-        computeDaysLeft(session.user);
-        loadData(session.user.id);
-      } else {
-        resetLocalData();
-      }
+    if (authStatus === "authenticated" && userId) {
+      if (loadedForUserRef.current !== userId) loadData(userId);
+    } else if (authStatus === "signed-out") {
+      resetLocalData();
     }
-
-    init();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      const user = session?.user;
-      if (!user) { resetLocalData(); return; }
-      setUserId(user.id);
-      computeDaysLeft(user);
-      if (loadedForUserRef.current !== user.id) loadData(user.id);
-    });
-
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
+    // "initializing" and "error" — nothing to do yet, still waiting.
+  }, [authStatus, userId]);
 
   function resetLocalData() {
     loadedForUserRef.current = null;
-    setUserId(null);
     setDataState({ settings: defaultSettings, invoices: [] });
     setDataLoading(false);
     setDataError(null);
     setSubscriptionActive(false);
-    setTrialExpired(false);
-  }
-
-  function computeDaysLeft(user) {
-    const diffDays = Math.floor((new Date() - new Date(user.created_at)) / (1000 * 60 * 60 * 24));
-    setDaysLeft(Math.max(0, TRIAL_DAYS - diffDays));
-    setTrialExpired(diffDays >= TRIAL_DAYS);
+    setHasInitialData(false);
   }
 
   async function loadData(id) {
     // Load this specific user's cached data instantly — completely safe because
-    // the cache key includes the user ID so it can never return another user's data.
+    // the cache key includes the user ID so it can never return another user's
+    // data. This alone is enough to mark startup data as "ready": AuthGate can
+    // stop showing the branded loading screen and render real (if possibly a
+    // little stale) data instead of empty placeholders.
     const cached = readCache(id);
     if (cached) {
       setDataState(cached);
       setSubscriptionActive(cached.settings?.subscriptionActive === true);
       loadedForUserRef.current = id;
+      setHasInitialData(true);
     }
 
-    // Always fetch fresh from Supabase — cache is only for the initial render
+    // Always fetch fresh from Supabase — cache is only for the instant first
+    // paint, this keeps it correct in the background (or, if there was no
+    // cache, this is what startup is actually waiting on).
     setDataLoading(true);
     setDataError(null);
 
@@ -140,9 +128,12 @@ export function AppProvider({ children }) {
       setDataState(freshData);
       writeCache(id, freshData);
       loadedForUserRef.current = id;
+      setHasInitialData(true);
     } catch (error) {
       console.error("Load data error:", error);
-      // Only show the hard error screen if there's no cached data to fall back on
+      // Only a hard failure if there's no cache to fall back on — if cached
+      // data is already showing, this is a silent background-refresh failure,
+      // not something that should interrupt the user.
       if (!cached) setDataError("Failed to load your account data.");
     } finally {
       setDataLoading(false);
@@ -168,6 +159,8 @@ export function AppProvider({ children }) {
 
   async function uploadLogo(file) {
     if (!userId) return { url: null, error: "Not logged in." };
+    if (!file.type.startsWith("image/")) return { url: null, error: "Please choose an image file." };
+    if (file.size > 5 * 1024 * 1024) return { url: null, error: "Logo must be smaller than 5MB." };
     const ext = file.name.split(".").pop();
     const path = `${userId}/logo.${ext}`;
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
@@ -260,33 +253,24 @@ export function AppProvider({ children }) {
 
   async function signOut() {
     await supabase.auth.signOut();
+    // AppInitProvider's auth listener will also fire and drive the same reset
+    // via the effect above — this direct call just makes it instant instead
+    // of waiting on that async round-trip.
     resetLocalData();
   }
 
-  const value = {
+  const value = useMemo(() => ({
     data, setData, saveInvoice, updateInvoice, convertQuoteToInvoice,
     deleteInvoice, saveSettings, uploadLogo, signOut,
-    userId, daysLeft, dataLoading, dataError,
+    userId, dataLoading, dataError, hasInitialData,
     reloadData: () => userId && loadData(userId),
     isReadOnly, subscriptionActive, trialExpired,
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [data, userId, dataLoading, dataError, hasInitialData, isReadOnly, subscriptionActive, trialExpired]);
 
   return (
     <AppContext.Provider value={value}>
-      {dataError && !readCache(userId) ? (
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f7f7f7", padding: 20 }}>
-          <div style={{ background: "#fff", border: "1px solid #ebebeb", borderRadius: 14, padding: 32, maxWidth: 400, width: "100%", textAlign: "center", fontFamily: "system-ui" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-            <p style={{ fontSize: "0.95rem", fontWeight: 600, color: "#111", marginBottom: 8 }}>Something went wrong</p>
-            <p style={{ fontSize: "0.85rem", color: "#888", marginBottom: 24, lineHeight: 1.6 }}>{dataError}</p>
-            <button onClick={() => userId && loadData(userId)} style={{ padding: "10px 24px", background: "#111", color: "#fff", border: "none", borderRadius: 8, fontSize: "0.875rem", fontWeight: 500, cursor: "pointer", fontFamily: "system-ui" }}>
-              Try again
-            </button>
-          </div>
-        </div>
-      ) : (
-        children
-      )}
+      {children}
     </AppContext.Provider>
   );
 }

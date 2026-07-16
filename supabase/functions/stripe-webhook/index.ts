@@ -5,6 +5,11 @@
 // what actually flips `subscriptionActive` on or off in the user's settings
 // row — the frontend never sets this flag itself, it only reads it.
 //
+// Also writes cancelAtPeriodEnd / currentPeriodEnd / planInterval / planAmount /
+// planCurrency so the Account Settings modal can show a real "Cancelled —
+// access until <date>" state and the actual price paid, instead of a
+// hardcoded renewal date and price.
+//
 // Deploy with: supabase functions deploy stripe-webhook
 //
 // After deploying, register this function's URL in
@@ -66,6 +71,24 @@ async function patchUserSettings(userId: string, patch: Record<string, unknown>)
   return { error: upsertError };
 }
 
+// Pulls the fields the frontend needs to show real plan/pricing/cancellation
+// info instead of the old hardcoded "$49.99/year, renews 8 July 2027" text.
+// cancelAtPeriodEnd is the key one: when a customer cancels via the Stripe
+// billing portal, Stripe does NOT flip `status` away from "active" — it just
+// sets cancel_at_period_end=true and leaves status alone until the period
+// actually ends. Reading only `status` (as this webhook used to) means a
+// cancelled-but-still-paid-up user looks identical to a normal active one.
+function extractSubscriptionFields(subscription: Stripe.Subscription) {
+  const item = subscription.items.data[0];
+  return {
+    cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
+    currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
+    planInterval: item?.price?.recurring?.interval || null,
+    planAmount: item?.price?.unit_amount ?? null,
+    planCurrency: item?.price?.currency || null,
+  };
+}
+
 // Finds the Supabase user_id whose settings row has a matching stripeCustomerId.
 // Needed because subscription.updated / subscription.deleted events only give
 // you a Stripe customer ID, not your own user_id — so we stored that customer
@@ -124,10 +147,25 @@ Deno.serve(async (req: Request) => {
           break;
         }
 
+        // The checkout session only carries the subscription ID, not its full
+        // details (period end, price, cancellation state) — fetch it so the
+        // account modal can show real numbers from the very first payment.
+        let subscriptionFields = {};
+        if (typeof session.subscription === "string") {
+          try {
+            const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            subscriptionFields = extractSubscriptionFields(subscription);
+          } catch (err) {
+            console.error("Failed to retrieve subscription after checkout:", err);
+          }
+        }
+
         await patchUserSettings(userId, {
           subscriptionActive: true,
+          subscriptionStatus: "active",
           stripeCustomerId: stripeCustomerId,
           subscriptionUpdatedAt: new Date().toISOString(),
+          ...subscriptionFields,
         });
 
         break;
@@ -158,6 +196,7 @@ Deno.serve(async (req: Request) => {
           subscriptionActive: isActive,
           subscriptionStatus: subscription.status,
           subscriptionUpdatedAt: new Date().toISOString(),
+          ...extractSubscriptionFields(subscription),
         });
 
         break;
@@ -183,6 +222,7 @@ Deno.serve(async (req: Request) => {
         await patchUserSettings(userId, {
           subscriptionActive: false,
           subscriptionStatus: "canceled",
+          cancelAtPeriodEnd: false,
           subscriptionUpdatedAt: new Date().toISOString(),
         });
 

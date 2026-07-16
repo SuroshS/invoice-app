@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { NavLink, Outlet, Link, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, Link } from "react-router-dom";
 import { useApp } from "../context/AppContext";
+import { useAppInit } from "../context/AppInitProvider";
 import { supabase } from "../lib/supabase";
 import logo from "../assets/paivlewhite-removebg-preview.png";
 
@@ -205,6 +206,7 @@ html, body, #root {
   background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2);
   color: #fff; padding: 3px 9px; border-radius: 99px; font-size: 0.65rem; font-weight: 600;
 }
+.sub-status-badge.cancelled { background: rgba(240,80,80,0.22); border-color: rgba(240,80,80,0.35); }
 .sub-renews { font-size: 0.72rem; opacity: 0.5; margin-top: 6px; }
 .sub-header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 
@@ -318,9 +320,9 @@ html, body, #root {
 `;
 
 export default function Layout() {
-  const { signOut, daysLeft, subscriptionActive, data } = useApp();
-  const navigate = useNavigate();
-  const [userEmail, setUserEmail] = useState("");
+  const { signOut, subscriptionActive, data } = useApp();
+  const { daysLeft, user } = useAppInit();
+  const userEmail = user?.email || "";
   const [showSheet, setShowSheet] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -337,10 +339,7 @@ export default function Layout() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
 
-  // Password change form
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  // Password change — just resends a reset email, no inline password entry
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const popoverRef = useRef(null);
@@ -359,15 +358,37 @@ export default function Layout() {
   const initials = displayName.slice(0, 2).toUpperCase() || "PA";
 
   // Plan status — reuses the subscriptionActive/daysLeft state already computed
-  // in AppContext, plus the subscriptionStatus the Stripe webhook already stores,
-  // rather than introducing any new billing logic here.
+  // in AppContext. cancelAtPeriodEnd/currentPeriodEnd/planInterval/planAmount
+  // come straight from Stripe via the webhook (see stripe-webhook/index.ts).
+  // Access continues until currentPeriodEnd even after cancelling — Stripe
+  // doesn't revoke access immediately, it just stops renewing — so a
+  // cancelled-but-still-paid-up subscriber is still subscriptionActive: true,
+  // distinguished only by cancelAtPeriodEnd.
+  const cancelAtPeriodEnd = data?.settings?.cancelAtPeriodEnd === true;
+  const currentPeriodEnd = data?.settings?.currentPeriodEnd || null;
+  const planInterval = data?.settings?.planInterval || null;
+  const planAmount = data?.settings?.planAmount;
+  const planCurrency = data?.settings?.planCurrency || "aud";
+
   const planLabel = subscriptionActive
-    ? { label: "Active", cls: "pro" }
-    : data?.settings?.subscriptionStatus
-    ? { label: "Cancelled", cls: "cancelled" }
+    ? cancelAtPeriodEnd
+      ? { label: "Cancelled", cls: "cancelled" }
+      : { label: "Active", cls: "pro" }
     : daysLeft > 0
     ? { label: "Free Trial", cls: "trial" }
     : { label: "Free Plan", cls: "free" };
+
+  function formatPeriodEnd(iso) {
+    if (!iso) return null;
+    return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function formatPlanPrice(amountCents, currency, interval) {
+    if (amountCents == null || !interval) return null;
+    const amount = (amountCents / 100).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const symbol = (currency || "aud").toLowerCase() === "aud" ? "$" : `${(currency || "").toUpperCase()} `;
+    return { amount: `${symbol}${amount}`, period: interval === "year" ? "/year" : "/month" };
+  }
 
   // Close popover on outside click
   useEffect(() => {
@@ -382,13 +403,6 @@ export default function Layout() {
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
-  }, []);
-
-  // Load the real authenticated user email from Supabase
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) setUserEmail(user.email);
-    });
   }, []);
 
   const toastTimerRef = useRef(null);
@@ -406,9 +420,8 @@ export default function Layout() {
     if (!emailPassword) { setEmailError("Please enter your current password."); return; }
     setEmailLoading(true);
     // Re-authenticate first by signing in with current credentials
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
     const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: currentUser?.email || "",
+      email: user?.email || "",
       password: emailPassword,
     });
     if (signInError) { setEmailError("Incorrect password."); setEmailLoading(false); return; }
@@ -423,7 +436,6 @@ export default function Layout() {
   async function handlePasswordChange() {
     setPasswordError("");
     setPasswordLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) { setPasswordError("Could not find your email address."); setPasswordLoading(false); return; }
     const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
       redirectTo: `${window.location.origin}/reset-password`,
@@ -446,6 +458,7 @@ export default function Layout() {
       if (json.url) { window.location.href = json.url; }
       else { showToast(json.error || "Could not open billing portal"); }
     } catch (e) {
+      console.error("Billing portal error:", e);
       showToast("Something went wrong — please try again");
     }
     setPortalLoading(false);
@@ -607,7 +620,7 @@ export default function Layout() {
         <div className="acct-modal">
           <div className="acct-topbar">
             <h2>Account Settings</h2>
-            <button className="acct-close" onClick={() => setAcctOpen(false)}>✕</button>
+            <button className="acct-close" onClick={() => setAcctOpen(false)} aria-label="Close">✕</button>
           </div>
 
           <div className="acct-tabs">
@@ -641,6 +654,17 @@ export default function Layout() {
                     </div>
                     <div className="acct-row">
                       <div className="acct-row-left">
+                        <div className="acct-row-title">Password</div>
+                        <div className="acct-row-sub" style={passwordError ? { color: "#c0392b" } : undefined}>
+                          {passwordError || "Send yourself a reset link"}
+                        </div>
+                      </div>
+                      <button className="acct-btn acct-btn-outline" onClick={handlePasswordChange} disabled={passwordLoading}>
+                        {passwordLoading ? "Sending..." : "Change"}
+                      </button>
+                    </div>
+                    <div className="acct-row">
+                      <div className="acct-row-left">
                         <div className="acct-row-title">Sign out</div>
                         <div className="acct-row-sub">Sign out on this device</div>
                       </div>
@@ -652,75 +676,133 @@ export default function Layout() {
             )}
 
             {/* ── Subscription tab ── */}
-            {acctTab === "subscription" && (
-              <>
-                {subscriptionActive ? (
-                  <>
-                    <div className="acct-alert acct-alert-purple" style={{ marginBottom: 16 }}>
-                      <span>⭐</span>
-                      <span><strong>Early adopter rate locked in.</strong> Your $49.99/year price is guaranteed for life as long as your subscription stays active.</span>
-                    </div>
-                    <div className="acct-card" style={{ marginBottom: 16 }}>
-                      <div className="sub-header">
-                        <div className="sub-header-top">
-                          <div>
-                            <div className="sub-plan-label">Current plan</div>
-                            <div className="sub-plan-price">$49.99<span>/year</span></div>
+            {acctTab === "subscription" && (() => {
+              const price = formatPlanPrice(planAmount, planCurrency, planInterval);
+              const periodEndLabel = formatPeriodEnd(currentPeriodEnd);
+              return (
+                <>
+                  {subscriptionActive && !cancelAtPeriodEnd && (
+                    <>
+                      <div className="acct-alert acct-alert-purple" style={{ marginBottom: 16 }}>
+                        <span>⭐</span>
+                        <span><strong>Thanks for subscribing.</strong> {price ? `Your ${price.amount}${price.period} price is guaranteed for as long as your subscription stays active.` : "Your subscription is active."}</span>
+                      </div>
+                      <div className="acct-card" style={{ marginBottom: 16 }}>
+                        <div className="sub-header">
+                          <div className="sub-header-top">
+                            <div>
+                              <div className="sub-plan-label">Current plan</div>
+                              <div className="sub-plan-price">{price ? <>{price.amount}<span>{price.period}</span></> : "Active"}</div>
+                            </div>
+                            <span className="sub-status-badge">● Active</span>
                           </div>
-                          <span className="sub-status-badge">● Active</span>
+                          <div className="sub-renews">{periodEndLabel ? `Renews ${periodEndLabel}` : "Renews automatically"}</div>
                         </div>
-                        <div className="sub-renews">Renews 8 July 2027</div>
-                      </div>
-                      <div className="acct-row">
-                        <div className="acct-row-left">
-                          <div className="acct-row-title">Payment method</div>
-                          <div className="acct-row-sub">Update your card details</div>
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title">Payment method</div>
+                            <div className="acct-row-sub">Update your card details</div>
+                          </div>
+                          <button className="acct-btn acct-btn-outline" onClick={openBillingPortal} disabled={portalLoading}>
+                            {portalLoading ? "Opening..." : "Update card"}
+                          </button>
                         </div>
-                        <button className="acct-btn acct-btn-outline" onClick={openBillingPortal} disabled={portalLoading}>
-                          {portalLoading ? "Opening..." : "Update card"}
-                        </button>
-                      </div>
-                      <div className="acct-row">
-                        <div className="acct-row-left">
-                          <div className="acct-row-title">Billing history</div>
-                          <div className="acct-row-sub">Download past receipts</div>
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title">Billing history</div>
+                            <div className="acct-row-sub">Download past receipts</div>
+                          </div>
+                          <button className="acct-btn acct-btn-outline" onClick={openBillingPortal} disabled={portalLoading}>
+                            {portalLoading ? "Opening..." : "View invoices"}
+                          </button>
                         </div>
-                        <button className="acct-btn acct-btn-outline" onClick={openBillingPortal} disabled={portalLoading}>
-                          {portalLoading ? "Opening..." : "View invoices"}
-                        </button>
-                      </div>
-                      <div className="acct-row">
-                        <div className="acct-row-left">
-                          <div className="acct-row-title" style={{ color: "#c0392b" }}>Cancel subscription</div>
-                          <div className="acct-row-sub">Access continues until renewal date</div>
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title" style={{ color: "#c0392b" }}>Cancel subscription</div>
+                            <div className="acct-row-sub">{periodEndLabel ? `Access continues until ${periodEndLabel}` : "Access continues until your renewal date"}</div>
+                          </div>
+                          <button className="acct-btn acct-btn-red-outline" onClick={openBillingPortal} disabled={portalLoading}>
+                            Cancel
+                          </button>
                         </div>
-                        <button className="acct-btn acct-btn-red-outline" onClick={openBillingPortal} disabled={portalLoading}>
-                          Cancel
-                        </button>
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="acct-alert acct-alert-red" style={{ marginBottom: 16 }}>
-                      <span>⚠</span>
-                      <span>{daysLeft > 0 ? `You have ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left in your free trial.` : "Your free trial has ended."} Subscribe to keep creating invoices.</span>
-                    </div>
-                    <div className="acct-card">
-                      <div className="acct-row">
-                        <div className="acct-row-left">
-                          <div className="acct-row-title">Subscribe to Payvle</div>
-                          <div className="acct-row-sub">From $49.99/year · cancel anytime</div>
+                    </>
+                  )}
+
+                  {subscriptionActive && cancelAtPeriodEnd && (
+                    <>
+                      <div className="acct-alert acct-alert-red" style={{ marginBottom: 16 }}>
+                        <span>⚠</span>
+                        <span>
+                          <strong>Your subscription is cancelled.</strong> {periodEndLabel
+                            ? `You'll keep full access until ${periodEndLabel}, then your account moves to the free plan.`
+                            : "You'll keep full access until the end of your current billing period, then your account moves to the free plan."}
+                        </span>
+                      </div>
+                      <div className="acct-card" style={{ marginBottom: 16 }}>
+                        <div className="sub-header">
+                          <div className="sub-header-top">
+                            <div>
+                              <div className="sub-plan-label">Current plan</div>
+                              <div className="sub-plan-price">{price ? <>{price.amount}<span>{price.period}</span></> : "Active"}</div>
+                            </div>
+                            <span className="sub-status-badge cancelled">● Cancelled</span>
+                          </div>
+                          <div className="sub-renews">{periodEndLabel ? `Access ends ${periodEndLabel}` : "Ending at your current period's end"}</div>
                         </div>
-                        <button className="acct-btn acct-btn-dark" onClick={() => { setAcctOpen(false); window.__payvleShowUpgradePrompt?.(); }}>
-                          Subscribe →
-                        </button>
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title">Payment method</div>
+                            <div className="acct-row-sub">Update your card details</div>
+                          </div>
+                          <button className="acct-btn acct-btn-outline" onClick={openBillingPortal} disabled={portalLoading}>
+                            {portalLoading ? "Opening..." : "Update card"}
+                          </button>
+                        </div>
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title">Billing history</div>
+                            <div className="acct-row-sub">Download past receipts</div>
+                          </div>
+                          <button className="acct-btn acct-btn-outline" onClick={openBillingPortal} disabled={portalLoading}>
+                            {portalLoading ? "Opening..." : "View invoices"}
+                          </button>
+                        </div>
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title">Reactivate subscription</div>
+                            <div className="acct-row-sub">Undo the cancellation and keep your subscription running</div>
+                          </div>
+                          <button className="acct-btn acct-btn-dark" onClick={openBillingPortal} disabled={portalLoading}>
+                            {portalLoading ? "Opening..." : "Reactivate"}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
+                    </>
+                  )}
+
+                  {!subscriptionActive && (
+                    <>
+                      <div className="acct-alert acct-alert-red" style={{ marginBottom: 16 }}>
+                        <span>⚠</span>
+                        <span>{daysLeft > 0 ? `You have ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left in your free trial.` : "Your free trial has ended."} Subscribe to keep creating invoices.</span>
+                      </div>
+                      <div className="acct-card">
+                        <div className="acct-row">
+                          <div className="acct-row-left">
+                            <div className="acct-row-title">Subscribe to Payvle</div>
+                            <div className="acct-row-sub">From $12.99/month · cancel anytime</div>
+                          </div>
+                          <button className="acct-btn acct-btn-dark" onClick={() => { setAcctOpen(false); window.__payvleShowUpgradePrompt?.(); }}>
+                            Subscribe →
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
 
             {/* ── Danger zone tab ── */}
             {acctTab === "danger" && (

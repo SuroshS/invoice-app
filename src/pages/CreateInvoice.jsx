@@ -828,7 +828,7 @@ export default function CreateInvoice() {
               />
               <div className="ci-line-total">${fmt(item.qty * item.rate)}</div>
               {form.items.length > 1 && (
-                <button className="ci-del-btn" onClick={() => removeItem(i)}>✕</button>
+                <button className="ci-del-btn" onClick={() => removeItem(i)} aria-label="Remove item">✕</button>
               )}
 
               {/* Mobile-only layout for the same fields */}
@@ -898,7 +898,7 @@ export default function CreateInvoice() {
                 <div className="ci-preview-title">{invoiceNumber}</div>
                 <div className="ci-preview-meta">{form.billToName || "No client"} · {form.date}</div>
               </div>
-              <button className="ci-preview-close" onClick={() => setPreviewOpen(false)}>✕</button>
+              <button className="ci-preview-close" onClick={() => setPreviewOpen(false)} aria-label="Close preview">✕</button>
             </div>
             <div className="ci-preview-body">
               {pdfLoading && (

@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { useApp } from "../context/AppContext";
+import { useAppInit } from "../context/AppInitProvider";
+import StartupScreen from "./StartupScreen";
 import logo from "../assets/paivleblack.png";
 
 export const CURRENT_TERMS_VERSION = "1.0";
 export const CURRENT_PRIVACY_VERSION = "1.0";
 
 const SESSION_PROMPT_KEY = "payvle_upgrade_prompt_shown";
-const LAST_USER_KEY = "payvle_last_user_id";
 
 const styles = `
 .auth-wrap {
@@ -159,8 +160,6 @@ export default function AuthGate({ children }) {
   const [success, setSuccess] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState(null);
-  const [authResolved, setAuthResolved] = useState(false);
 
   // Upgrade prompt state
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
@@ -168,48 +167,14 @@ export default function AuthGate({ children }) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
 
-  // Optimistic auth — only activate for the SAME user as last time.
-  // If a different (or unknown) user opens the app, always show the login
-  // form first. This prevents one user's data briefly flashing for another.
-  const lastUserId = localStorage.getItem(LAST_USER_KEY);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function initAuth() {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (error) console.error("Auth session error:", error);
-
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      setAuthResolved(true);
-
-      // Store the user ID (not just a boolean) so we can verify identity
-      // on the next page load before showing any cached data.
-      if (currentUser) {
-        localStorage.setItem(LAST_USER_KEY, currentUser.id);
-      } else {
-        localStorage.removeItem(LAST_USER_KEY);
-      }
-    }
-
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      setAuthResolved(true);
-      if (currentUser) {
-        localStorage.setItem(LAST_USER_KEY, currentUser.id);
-      } else {
-        localStorage.removeItem(LAST_USER_KEY);
-      }
-    });
-
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
+  // Auth state comes from AppInitProvider — the single place in the app that
+  // resolves the Supabase session — and initial-data readiness comes from
+  // AppContext. This is the only component that decides what to render for
+  // the whole app: the branded startup screen, a hard error, the login form,
+  // or the real protected app — never a mix of the two, and never protected
+  // pages on default/placeholder data.
+  const { status: authStatus, authError } = useAppInit();
+  const { hasInitialData, dataError, reloadData } = useApp();
 
   async function handleSubscribe() {
     setCheckoutError("");
@@ -304,14 +269,39 @@ export default function AuthGate({ children }) {
     if (e.key === "Enter") mode === "login" ? handleLogin() : handleSignup();
   }
 
-  // Optimistic rendering rules:
-  // - Before auth resolves: only show app shell if the SAME user was logged in last time
-  //   (matched by stored user ID). New users and different users always see login first.
-  // - After auth resolves: switch to real state immediately.
-  const isSameReturningUser = !!lastUserId;
-  const showApp = authResolved ? !!user : isSameReturningUser;
+  // The single rendering decision point for the whole app — never a mix of
+  // the two, and never protected pages on default/placeholder data:
+  //   1. Auth still resolving           -> branded startup screen
+  //   2. Session restore itself failed  -> startup screen with a retry button
+  //   3. Signed in, but initial data
+  //      (settings/invoices) isn't      -> branded startup screen. Cached data
+  //      ready yet                         counts as "ready" (see AppContext's
+  //                                         hasInitialData), so in practice this
+  //                                         window is only hit on a genuinely
+  //                                         first-ever load with no cache.
+  //   4. Signed in, and the data fetch
+  //      hard-failed with no cache to
+  //      fall back on                   -> error screen with retry
+  //   5. Signed in and ready            -> render the real app
+  //   6. Confirmed signed out           -> falls through to the login/signup
+  //                                         form further down
+  if (authStatus === "initializing") {
+    return <StartupScreen />;
+  }
 
-  if (showApp) {
+  if (authStatus === "error") {
+    return <StartupScreen error={authError} />;
+  }
+
+  if (authStatus === "authenticated" && dataError && !hasInitialData) {
+    return <StartupScreen error={dataError} onRetry={reloadData} />;
+  }
+
+  if (authStatus === "authenticated" && !hasInitialData) {
+    return <StartupScreen />;
+  }
+
+  if (authStatus === "authenticated") {
     return (
       <>
         <style>{styles}</style>
@@ -355,7 +345,7 @@ export default function AuthGate({ children }) {
           </div>
         )}
 
-        <UpgradePromptController onShowPrompt={() => setShowUpgradePrompt(true)} />
+        <UpgradePromptController setShowUpgradePrompt={setShowUpgradePrompt} />
         <UpgradePromptBridge setShow={setShowUpgradePrompt} />
         {children}
       </>
@@ -463,19 +453,19 @@ export default function AuthGate({ children }) {
   );
 }
 
-function UpgradePromptController({ onShowPrompt }) {
+function UpgradePromptController({ setShowUpgradePrompt }) {
   const { isReadOnly } = useApp();
   useEffect(() => {
     if (!isReadOnly) return;
     const alreadyShown = sessionStorage.getItem(SESSION_PROMPT_KEY);
     if (!alreadyShown) {
       const timer = setTimeout(() => {
-        onShowPrompt();
+        setShowUpgradePrompt(true);
         sessionStorage.setItem(SESSION_PROMPT_KEY, "1");
       }, 600);
       return () => clearTimeout(timer);
     }
-  }, [isReadOnly]);
+  }, [isReadOnly, setShowUpgradePrompt]);
   return null;
 }
 
