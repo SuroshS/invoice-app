@@ -3,10 +3,8 @@ import { supabase } from "../lib/supabase";
 import { useApp } from "../context/AppContext";
 import { useAppInit } from "../context/AppInitProvider";
 import StartupScreen from "./StartupScreen";
+import { CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION } from "../lib/policyVersions";
 import logo from "../assets/paivleblack.png";
-
-export const CURRENT_TERMS_VERSION = "1.0";
-export const CURRENT_PRIVACY_VERSION = "1.0";
 
 const SESSION_PROMPT_KEY = "payvle_upgrade_prompt_shown";
 
@@ -241,24 +239,29 @@ export default function AuthGate({ children }) {
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     if (!agreedToTerms) { setError("Please agree to the Terms & Conditions and Privacy Policy to continue."); return; }
     setLoading(true);
-    const { data: signUpData, error } = await supabase.auth.signUp({
+    // No `settings` row is written here — signUp() runs with no session yet
+    // (email confirmation is required), so any public-schema write at this
+    // point would need an unauthenticated-write RLS carve-out. Instead, the
+    // terms-acceptance record rides along as auth user_metadata (governed by
+    // Supabase Auth itself, not RLS) and AppContext creates the real
+    // `settings` row the first time this user actually logs in — by then
+    // there's a real session, so it's a normal auth.uid()-scoped insert.
+    const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: trimmedFullName } },
+      options: {
+        data: {
+          full_name: trimmedFullName,
+          terms_accepted_at: new Date().toISOString(),
+          policy_versions: { terms: CURRENT_TERMS_VERSION, privacy: CURRENT_PRIVACY_VERSION },
+        },
+      },
     });
     if (error) {
       if (error.message.includes("already registered")) setError("An account with this email already exists. Try signing in instead.");
       else setError(error.message);
       setLoading(false);
       return;
-    }
-    const newUserId = signUpData?.user?.id;
-    if (newUserId) {
-      const { error: acceptError } = await supabase.from("settings").upsert(
-        { user_id: newUserId, data: { fullName: trimmedFullName, termsAcceptedAt: new Date().toISOString(), policyVersions: { terms: CURRENT_TERMS_VERSION, privacy: CURRENT_PRIVACY_VERSION } }, updated_at: new Date().toISOString() },
-        { onConflict: "user_id" }
-      );
-      if (acceptError) console.error("Recording terms acceptance failed (non-fatal):", acceptError);
     }
     setSuccess("Account created! Check your email to confirm your account, then sign in.");
     setPassword(""); setConfirmPassword(""); setAgreedToTerms(false); setFullName("");

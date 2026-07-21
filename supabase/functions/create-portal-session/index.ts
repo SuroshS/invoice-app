@@ -87,6 +87,6 @@ Deno.serve(async (req: Request) => {
     return json({ url: portalData.url });
   } catch (err) {
     console.error("create-portal-session error:", err);
-    return json({ error: err.message || "Unknown error." }, 500);
+    return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });

@@ -35,7 +35,43 @@ export function AppInitProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
+    // Why a password-recovery session is excluded from the normal auth flow:
+    // clicking a "reset password" email link establishes a real, valid
+    // Supabase session, but it's meant for one single-purpose action —
+    // ResetPassword.jsx calling updateUser({password}) — not general app
+    // access; without this check, this provider would flip to
+    // "authenticated" purely because that session exists, and AppContext
+    // would react to it as a genuine sign-in, fetching data and even
+    // creating the user's initial settings row as a side effect of merely
+    // landing on the reset-password page, before they've touched the
+    // password field at all. It's checked by ROUTE rather than by auth event
+    // name because Supabase's different auth flows (implicit vs PKCE) route
+    // a recovery session through the PASSWORD_RECOVERY event in some cases
+    // and through INITIAL_SESSION (carrying the same recovery session, with
+    // no distinguishing event name) in others, depending on timing — the one
+    // thing reliably true regardless of which internal path fires is that
+    // this app only ever sends recovery links to /reset-password. Scope
+    // note: this only suppresses "authenticated" status while the user is
+    // actually on that route — it does not force a fresh login afterward,
+    // since the same underlying session is still valid once they navigate
+    // away (e.g. the page's own "Go to sign in" link is a full page reload
+    // to "/", which picks the persisted session back up as a normal login).
+    // If you want a hard "must log in again after resetting" guarantee,
+    // that needs an explicit signOut() call after a successful password
+    // update in ResetPassword.jsx — not implemented here.
+    function isPasswordRecoveryRoute() {
+      // startsWith rather than an exact match — a trailing slash or query
+      // string shouldn't be able to slip past this check.
+      return window.location.pathname.startsWith("/reset-password");
+    }
+
     function applySession(session) {
+      if (isPasswordRecoveryRoute()) {
+        localStorage.removeItem(LAST_USER_KEY);
+        setUser(null);
+        setStatus("signed-out");
+        return;
+      }
       const currentUser = session?.user ?? null;
       // Stored so a returning user can be recognised instantly on next load
       // (see AuthGate) without waiting on a network round-trip first.

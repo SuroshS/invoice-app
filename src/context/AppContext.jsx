@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAppInit } from "./AppInitProvider";
+import { CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION } from "../lib/policyVersions";
 
 const AppContext = createContext();
 
@@ -50,7 +51,7 @@ function writeCache(userId, data) {
 // supabase.auth itself — it only reacts to the auth state AppInitProvider
 // resolves, so there's exactly one place in the app deciding who's signed in.
 export function AppProvider({ children }) {
-  const { status: authStatus, userId, trialExpired } = useAppInit();
+  const { status: authStatus, userId, user, trialExpired } = useAppInit();
 
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
@@ -64,28 +65,16 @@ export function AppProvider({ children }) {
   const loadedForUserRef = useRef(null);
   const isReadOnly = trialExpired && !subscriptionActive;
 
-  // Reacts to the single auth source of truth (AppInitProvider) instead of
-  // running its own supabase.auth listener. Guarded by loadedForUserRef so a
-  // token-refresh event for the same user doesn't re-trigger a fetch.
-  useEffect(() => {
-    if (authStatus === "authenticated" && userId) {
-      if (loadedForUserRef.current !== userId) loadData(userId);
-    } else if (authStatus === "signed-out") {
-      resetLocalData();
-    }
-    // "initializing" and "error" — nothing to do yet, still waiting.
-  }, [authStatus, userId]);
-
-  function resetLocalData() {
+  const resetLocalData = useCallback(() => {
     loadedForUserRef.current = null;
     setDataState({ settings: defaultSettings, invoices: [] });
     setDataLoading(false);
     setDataError(null);
     setSubscriptionActive(false);
     setHasInitialData(false);
-  }
+  }, []);
 
-  async function loadData(id) {
+  const loadData = useCallback(async (id) => {
     // Load this specific user's cached data instantly — completely safe because
     // the cache key includes the user ID so it can never return another user's
     // data. This alone is enough to mark startup data as "ready": AuthGate can
@@ -117,7 +106,29 @@ export function AppProvider({ children }) {
       if (settingsError) throw settingsError;
       if (invoicesError) throw invoicesError;
 
-      const loadedSettings = settingsRow?.data || defaultSettings;
+      let loadedSettings = settingsRow?.data;
+
+      if (!loadedSettings) {
+        // No settings row exists yet — this is this user's first ever
+        // authenticated login. Create it now (not at signup, where there's
+        // no session yet) so the insert runs as a normal auth.uid()-scoped
+        // write instead of needing an unauthenticated-write RLS carve-out.
+        // The terms-acceptance timestamp/version travelled here as auth
+        // user_metadata (set at signup, read from the real session object).
+        const metadata = user?.user_metadata || {};
+        loadedSettings = {
+          ...defaultSettings,
+          fullName: metadata.full_name || "",
+          termsAcceptedAt: metadata.terms_accepted_at || new Date().toISOString(),
+          policyVersions: metadata.policy_versions || { terms: CURRENT_TERMS_VERSION, privacy: CURRENT_PRIVACY_VERSION },
+        };
+        const { error: seedError } = await supabase.from("settings").upsert(
+          { user_id: id, data: loadedSettings, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" }
+        );
+        if (seedError) console.error("Failed to create initial settings row:", seedError);
+      }
+
       setSubscriptionActive(loadedSettings.subscriptionActive === true);
 
       const freshData = {
@@ -138,7 +149,19 @@ export function AppProvider({ children }) {
     } finally {
       setDataLoading(false);
     }
-  }
+  }, [user]);
+
+  // Reacts to the single auth source of truth (AppInitProvider) instead of
+  // running its own supabase.auth listener. Guarded by loadedForUserRef so a
+  // token-refresh event for the same user doesn't re-trigger a fetch.
+  useEffect(() => {
+    if (authStatus === "authenticated" && userId) {
+      if (loadedForUserRef.current !== userId) loadData(userId);
+    } else if (authStatus === "signed-out") {
+      resetLocalData();
+    }
+    // "initializing" and "error" — nothing to do yet, still waiting.
+  }, [authStatus, userId, loadData, resetLocalData]);
 
   function setData(updaterOrValue) {
     setDataState((prev) => typeof updaterOrValue === "function" ? updaterOrValue(prev) : updaterOrValue);
@@ -265,8 +288,14 @@ export function AppProvider({ children }) {
     userId, dataLoading, dataError, hasInitialData,
     reloadData: () => userId && loadData(userId),
     isReadOnly, subscriptionActive, trialExpired,
+    // saveInvoice/updateInvoice/convertQuoteToInvoice/deleteInvoice/saveSettings/
+    // uploadLogo/signOut are plain functions recreated every render, but they
+    // only close over data/userId/subscriptionActive — all already listed below
+    // — so whenever any of those actually change, this memo recomputes and
+    // picks up fresh references from that same render. Adding the functions
+    // themselves here would defeat the memo (new identity every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [data, userId, dataLoading, dataError, hasInitialData, isReadOnly, subscriptionActive, trialExpired]);
+  }), [data, userId, dataLoading, dataError, hasInitialData, isReadOnly, subscriptionActive, trialExpired, loadData]);
 
   return (
     <AppContext.Provider value={value}>

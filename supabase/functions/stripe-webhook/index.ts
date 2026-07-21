@@ -41,34 +41,38 @@ const supabaseAdmin = createClient(
 // Merges a partial update into the existing settings.data JSONB blob for a
 // given user, without clobbering any other fields already stored there
 // (business info, bank details, invoice terms, etc).
+//
+// Stripe can legitimately deliver related-but-distinct events for the same
+// subscription lifecycle moment close together (e.g. checkout.session.completed
+// and customer.subscription.updated both firing when a new subscription is
+// created), with no ordering or non-overlap guarantee. A naive read-then-write
+// here would race: one call could read the row before another's write
+// commits, then overwrite that write with a merge based on its own stale
+// read — verified this would actually drop stripeCustomerId from the row,
+// since checkout.session.completed's patch sets it and
+// customer.subscription.updated's patch doesn't, so losing that race means
+// the merge silently reverts it to missing.
+//
+// Fixed via the `merge_settings_patch` Postgres function (see
+// supabase/migrations/20260716000002_merge_settings_patch_function.sql),
+// which does the whole read-merge-write as one atomic
+// `INSERT ... ON CONFLICT DO UPDATE SET data = settings.data || excluded.data`
+// statement. Postgres's own row-level locking serializes concurrent calls
+// for the same user_id — there's no window for the race to occur, unlike an
+// optimistic-retry approach that only detects and recovers from it after
+// the fact. Requires that migration to be applied — see its header comment
+// for deployment sequencing.
 async function patchUserSettings(userId: string, patch: Record<string, unknown>) {
-  const { data: row, error: fetchError } = await supabaseAdmin
-    .from("settings")
-    .select("data")
-    .eq("user_id", userId)
-    .maybeSingle();
+  const { error } = await supabaseAdmin.rpc("merge_settings_patch", {
+    p_user_id: userId,
+    p_patch: patch,
+  });
 
-  if (fetchError) {
-    console.error(`Failed to fetch settings for user ${userId}:`, fetchError);
-    return { error: fetchError };
+  if (error) {
+    console.error(`Failed to patch settings for user ${userId}:`, error);
   }
 
-  const updatedData = { ...(row?.data || {}), ...patch };
-
-  const { error: upsertError } = await supabaseAdmin.from("settings").upsert(
-    {
-      user_id: userId,
-      data: updatedData,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
-
-  if (upsertError) {
-    console.error(`Failed to update settings for user ${userId}:`, upsertError);
-  }
-
-  return { error: upsertError };
+  return { error };
 }
 
 // Pulls the fields the frontend needs to show real plan/pricing/cancellation
@@ -108,12 +112,24 @@ async function findUserIdByStripeCustomerId(customerId: string): Promise<string 
   return data?.user_id || null;
 }
 
+// Consistent JSON responses everywhere (previously two of these returned
+// plain text instead) with no raw exception messages ever reaching the
+// caller — full details always go to console.error/console.warn for the
+// Supabase function logs, but the response body only ever carries a fixed,
+// generic message.
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   const signature = req.headers.get("Stripe-Signature");
   const body = await req.text();
 
   if (!signature) {
-    return new Response("Missing Stripe-Signature header.", { status: 400 });
+    return json({ error: "Missing Stripe-Signature header." }, 400);
   }
 
   let event: Stripe.Event;
@@ -126,9 +142,7 @@ Deno.serve(async (req: Request) => {
     );
   } catch (err) {
     console.error("Webhook signature verification failed:", err);
-    return new Response(`Webhook signature error: ${err.message}`, {
-      status: 400,
-    });
+    return json({ error: "Webhook signature verification failed." }, 400);
   }
 
   try {
@@ -235,13 +249,11 @@ Deno.serve(async (req: Request) => {
         break;
     }
 
-    return new Response(JSON.stringify({ received: true }), { status: 200 });
+    return json({ received: true }, 200);
   } catch (err) {
     console.error("Webhook handler error:", err);
     // Still return 200 here in most cases would be wrong — Stripe will retry
     // on non-2xx, which is what you want if something failed transiently.
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-    });
+    return json({ error: "Webhook processing failed." }, 500);
   }
 });

@@ -2,9 +2,11 @@
 [functions.create-checkout-session]
 enabled = true
 verify_jwt = false
-import_map = "./functions/create-checkout-session/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+# No import_map — this function imports everything via full esm.sh URLs
+# directly (see index.ts), never through an aliased specifier, so a deno.json
+# import map has no effect on it. One existed here before with entries for
+# @supabase/functions-js / @supabase/server that the code never actually
+# imported — removed rather than left as dead, misleading configuration.
 entrypoint = "./functions/create-checkout-session/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
@@ -13,10 +15,19 @@ entrypoint = "./functions/create-checkout-session/index.ts"
 [functions.stripe-webhook]
 enabled = true
 verify_jwt = false
-import_map = "./functions/stripe-webhook/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+# Same as above — imports Stripe and supabase-js via direct esm.sh URLs, no
+# import map needed.
 entrypoint = "./functions/stripe-webhook/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/stripe-webhook/*.html" ]
+
+[functions.create-portal-session]
+enabled = true
+verify_jwt = false
+# Previously undeclared here — its verify_jwt=false behavior depended on
+# remembering to pass --no-verify-jwt at deploy time (per the comment in its
+# own index.ts) instead of being configured. Added for consistency with its
+# two siblings above, so deployment doesn't depend on a CLI flag being
+# remembered correctly.
+entrypoint = "./functions/create-portal-session/index.ts"

@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     const user = await userRes.json();
     if (!user?.id) return json({ error: "Not authenticated." }, 401);
 
-    console.log("Authenticated user:", user.id, user.email);
+    console.log("Authenticated user:", user.id);
 
     // 2. Read plan from body
     let plan = "yearly";
@@ -119,6 +119,6 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     console.error("Unexpected error:", err);
-    return json({ error: err.message || "Unknown error." }, 500);
+    return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });
