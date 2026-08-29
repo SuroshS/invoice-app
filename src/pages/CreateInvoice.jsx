@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { pdf } from "@react-pdf/renderer";
 import InvoicePDF from "./InvoicePDF";
-import { loadPdfJs } from "../lib/pdfjs";
+import { loadPdfJs, renderPdfPagesToImages } from "../lib/pdfjs";
 
 function buildInvoiceNumber(settings, type) {
   const isQuote = type === "Quote";
@@ -16,9 +16,11 @@ function blankForm(type) {
   return {
     type,
     date: new Date().toISOString().slice(0, 10),
+    clientId: null,
     billToName: "",
     billToAddress: "",
     billToEmail: "",
+    billToPhone: "",
     gstEnabled: true,
     gstRate: 0.1,
     notes: "",
@@ -30,9 +32,11 @@ function formFromInvoice(invoice) {
   return {
     type: invoice.type || "Invoice",
     date: invoice.date || new Date().toISOString().slice(0, 10),
+    clientId: invoice.clientId || null,
     billToName: invoice.billToName || "",
     billToAddress: invoice.billToAddress || "",
     billToEmail: invoice.billToEmail || "",
+    billToPhone: invoice.billToPhone || "",
     gstEnabled: invoice.gstEnabled !== undefined ? invoice.gstEnabled : true,
     gstRate: invoice.gstRate || 0.1,
     notes: invoice.notes || "",
@@ -78,7 +82,7 @@ function fmt(n) {
 }
 
 function isFormDirty(form) {
-  const hasClientInfo = form.billToName || form.billToEmail || form.billToAddress;
+  const hasClientInfo = form.billToName || form.billToEmail || form.billToAddress || form.billToPhone;
   const hasNotes = form.notes;
   const hasLineItemContent = form.items.some(
     (item) => item.description || item.rate > 0 || item.qty !== 1
@@ -252,6 +256,33 @@ const styles = `
 .ci-field textarea { resize: vertical; min-height: 64px; }
 
 .ci-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+.ci-client-search-wrap { position: relative; margin-bottom: 12px; }
+.ci-client-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff;
+  border: 1px solid #ebebeb; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  max-height: 220px; overflow-y: auto; z-index: 60; padding: 6px;
+}
+.ci-client-option {
+  display: block; width: 100%; text-align: left; padding: 9px 10px; border-radius: 7px;
+  border: none; background: none; cursor: pointer; font-family: system-ui;
+}
+.ci-client-option:hover { background: #f5f5f5; }
+.ci-client-option-name { font-size: 0.85rem; font-weight: 500; color: #111; }
+.ci-client-option-sub { font-size: 0.72rem; color: #aaa; margin-top: 1px; }
+.ci-client-empty { padding: 10px; font-size: 0.8rem; color: #bbb; }
+.ci-client-selected {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #fafafa; border: 1px solid #ebebeb; border-radius: 9px; padding: 10px 13px;
+  margin-bottom: 12px;
+}
+.ci-client-selected-info { min-width: 0; }
+.ci-client-selected-name { font-size: 0.85rem; font-weight: 600; color: #111; }
+.ci-client-selected-sub { font-size: 0.74rem; color: #aaa; margin-top: 2px; }
+.ci-client-change-btn {
+  background: none; border: none; color: #5b41c0; font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; font-family: system-ui; text-decoration: underline; flex-shrink: 0;
+}
 
 .ci-line-labels {
   display: grid;
@@ -435,7 +466,7 @@ const styles = `
 `;
 
 export default function CreateInvoice() {
-  const { data, saveInvoice, updateInvoice, isReadOnly } = useApp();
+  const { data, saveInvoice, updateInvoice, createClient, isReadOnly } = useApp();
   const { settings } = data;
   const location = useLocation();
   const navigate = useNavigate();
@@ -461,6 +492,41 @@ export default function CreateInvoice() {
   const [form, setForm] = useState(() =>
     editingInvoice ? formFromInvoice(editingInvoice) : blankForm("Invoice")
   );
+
+  // "existing" shows a searchable picker over data.clients; "new" shows the
+  // free-text fields (and creates a client record on save). Editing a record
+  // that's already linked to a client starts in "existing" with that client
+  // pre-selected; a legacy record with no clientId starts in "new" so its
+  // free-typed details stay editable exactly as before this feature existed.
+  const [clientMode, setClientMode] = useState(
+    editingInvoice?.clientId ? "existing" : "new"
+  );
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [clientError, setClientError] = useState("");
+  const clientPickerRef = useRef(null);
+
+  useEffect(() => {
+    if (!clientPickerOpen) return;
+    function handleOutsideClick(e) {
+      if (clientPickerRef.current && !clientPickerRef.current.contains(e.target)) {
+        setClientPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [clientPickerOpen]);
+
+  const clients = useMemo(() => data.clients || [], [data.clients]);
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === form.clientId) || null,
+    [clients, form.clientId]
+  );
+  const matchingClients = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) => c.name.toLowerCase().includes(q));
+  }, [clients, clientSearch]);
 
   // Two separate loading flags so only the button actually clicked shows a spinner
   const [saving, setSaving] = useState(false);
@@ -545,6 +611,35 @@ export default function CreateInvoice() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function selectClient(client) {
+    setClientError("");
+    setForm((prev) => ({
+      ...prev,
+      clientId: client.id,
+      billToName: client.name || "",
+      billToEmail: client.email || "",
+      billToPhone: client.phone || "",
+      billToAddress: client.address || "",
+    }));
+    setClientPickerOpen(false);
+    setClientSearch("");
+  }
+
+  function switchToNewClient() {
+    setClientError("");
+    setClientMode("new");
+    setClientPickerOpen(false);
+    setForm((prev) => ({ ...prev, clientId: null }));
+  }
+
+  function switchToExistingClient() {
+    setClientError("");
+    setClientMode("existing");
+    // Existing free-typed text isn't a real client match — clear it so the
+    // picker starts empty rather than implying those details are linked.
+    setForm((prev) => ({ ...prev, clientId: null, billToName: "", billToEmail: "", billToPhone: "", billToAddress: "" }));
+  }
+
   function updateItem(index, field, value) {
     const items = [...form.items];
     items[index] = { ...items[index], [field]: value };
@@ -578,22 +673,7 @@ export default function CreateInvoice() {
     navigate("/invoices");
   }
 
-  const renderPdfToImages = useCallback(async (blob) => {
-    await loadPdfJs();
-    const arrayBuffer = await blob.arrayBuffer();
-    const pdfDoc = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-    const pages = [];
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const viewport = page.getViewport({ scale: 2.2 });
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-      pages.push(canvas.toDataURL("image/png"));
-    }
-    return pages;
-  }, []);
+  const renderPdfToImages = useCallback((blob) => renderPdfPagesToImages(blob, 2.2), []);
 
   async function openPreview() {
     const invoice = { ...form, invoiceNumber };
@@ -620,6 +700,31 @@ export default function CreateInvoice() {
     return { invoice, blob };
   }
 
+  // Resolves what clientId should be stored on the saved invoice. In
+  // "existing" mode this just requires a picker selection to already be
+  // made. In "new" mode, a client record is created from the free-typed
+  // fields (unless the name was left blank, matching the pre-existing
+  // behaviour of allowing a client-less draft invoice).
+  async function resolveClientForSave() {
+    if (clientMode === "existing") {
+      if (!form.clientId) {
+        return { clientId: null, error: 'Please select a client from the list, or switch to "New client".' };
+      }
+      return { clientId: form.clientId, error: null };
+    }
+    if (!form.billToName.trim()) {
+      return { clientId: null, error: null };
+    }
+    const { client, error } = await createClient({
+      name: form.billToName,
+      email: form.billToEmail,
+      phone: form.billToPhone,
+      address: form.billToAddress,
+    });
+    if (error) return { clientId: null, error };
+    return { clientId: client.id, error: null };
+  }
+
   function triggerDownload(blob, number) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -636,10 +741,18 @@ export default function CreateInvoice() {
   async function handleSave() {
     setSaveError("");
     setSaveSuccess("");
+    setClientError("");
     setSaving(true);
 
     try {
-      const invoice = { ...form, invoiceNumber };
+      const { clientId, error: clientErr } = await resolveClientForSave();
+      if (clientErr) {
+        setClientError(clientErr);
+        setSaving(false);
+        return;
+      }
+
+      const invoice = { ...form, clientId, invoiceNumber };
 
       const result = isEditing
         ? await updateInvoice(editingInvoice._id, invoice, totals)
@@ -674,14 +787,23 @@ export default function CreateInvoice() {
   async function handleSaveAndExport() {
     setSaveError("");
     setSaveSuccess("");
+    setClientError("");
     setExporting(true);
 
     try {
+      const { clientId, error: clientErr } = await resolveClientForSave();
+      if (clientErr) {
+        setClientError(clientErr);
+        setExporting(false);
+        return;
+      }
+
       const { invoice, blob } = await generatePdfBlob();
+      const invoiceWithClient = { ...invoice, clientId };
 
       const result = isEditing
-        ? await updateInvoice(editingInvoice._id, invoice, totals)
-        : await saveInvoice(invoice, totals);
+        ? await updateInvoice(editingInvoice._id, invoiceWithClient, totals)
+        : await saveInvoice(invoiceWithClient, totals);
 
       if (result.error) {
         setSaveError(result.error);
@@ -761,33 +883,114 @@ export default function CreateInvoice() {
         {/* Client details */}
         <div className="ci-card">
           <p className="ci-card-title">Client Details</p>
-          <div className="ci-grid-2">
-            <div className="ci-field">
-              <label>Client Name</label>
-              <input
-                value={form.billToName}
-                onChange={(e) => update("billToName", e.target.value)}
-                placeholder="e.g. Matt's Painting"
-              />
-            </div>
-            <div className="ci-field">
-              <label>Email</label>
-              <input
-                type="email"
-                value={form.billToEmail}
-                onChange={(e) => update("billToEmail", e.target.value)}
-                placeholder="client@email.com"
-              />
-            </div>
+
+          <div className="ci-type-row" style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              className={`ci-type-btn${clientMode === "new" ? " active" : ""}`}
+              onClick={switchToNewClient}
+            >
+              New client
+            </button>
+            <button
+              type="button"
+              className={`ci-type-btn${clientMode === "existing" ? " active" : ""}`}
+              onClick={switchToExistingClient}
+            >
+              Existing client
+            </button>
           </div>
-          <div className="ci-field">
-            <label>Address</label>
-            <textarea
-              value={form.billToAddress}
-              onChange={(e) => update("billToAddress", e.target.value)}
-              placeholder="Street, Suburb, State, Postcode"
-            />
-          </div>
+
+          {clientError && <div className="ci-error">⚠ {clientError}</div>}
+
+          {clientMode === "existing" ? (
+            <>
+              {selectedClient && (
+                <div className="ci-client-selected">
+                  <div className="ci-client-selected-info">
+                    <div className="ci-client-selected-name">{selectedClient.name}</div>
+                    <div className="ci-client-selected-sub">
+                      {[selectedClient.email, selectedClient.phone].filter(Boolean).join(" · ") || "No email or phone on file"}
+                    </div>
+                  </div>
+                  <button type="button" className="ci-client-change-btn" onClick={() => setClientPickerOpen(true)}>
+                    Change
+                  </button>
+                </div>
+              )}
+
+              {(!selectedClient || clientPickerOpen) && (
+                <div className="ci-client-search-wrap" ref={clientPickerRef}>
+                  <input
+                    value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    onFocus={() => setClientPickerOpen(true)}
+                    placeholder="Search clients by name..."
+                    autoFocus={clientPickerOpen}
+                  />
+                  {clientPickerOpen && (
+                    <div className="ci-client-dropdown">
+                      {matchingClients.length === 0 ? (
+                        <div className="ci-client-empty">
+                          {clients.length === 0 ? "No saved clients yet — add one via \"New client\"." : "No matching clients."}
+                        </div>
+                      ) : (
+                        matchingClients.map((c) => (
+                          <button type="button" key={c.id} className="ci-client-option" onClick={() => selectClient(c)}>
+                            <div className="ci-client-option-name">{c.name}</div>
+                            {(c.email || c.phone) && (
+                              <div className="ci-client-option-sub">{[c.email, c.phone].filter(Boolean).join(" · ")}</div>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="ci-grid-2">
+                <div className="ci-field">
+                  <label>Client Name</label>
+                  <input
+                    value={form.billToName}
+                    onChange={(e) => update("billToName", e.target.value)}
+                    placeholder="e.g. Matt's Painting"
+                  />
+                </div>
+                <div className="ci-field">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={form.billToEmail}
+                    onChange={(e) => update("billToEmail", e.target.value)}
+                    placeholder="client@email.com"
+                  />
+                </div>
+              </div>
+              <div className="ci-grid-2">
+                <div className="ci-field">
+                  <label>Phone</label>
+                  <input
+                    type="tel"
+                    value={form.billToPhone}
+                    onChange={(e) => update("billToPhone", e.target.value)}
+                    placeholder="0400 000 000"
+                  />
+                </div>
+              </div>
+              <div className="ci-field">
+                <label>Address</label>
+                <textarea
+                  value={form.billToAddress}
+                  onChange={(e) => update("billToAddress", e.target.value)}
+                  placeholder="Street, Suburb, State, Postcode"
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Line items */}

@@ -3,7 +3,11 @@ import { useApp } from "../context/AppContext";
 import { useNavigate } from "react-router-dom";
 import { pdf } from "@react-pdf/renderer";
 import InvoicePDF from "./InvoicePDF";
-import { loadPdfJs } from "../lib/pdfjs";
+import { renderPdfPagesToImages } from "../lib/pdfjs";
+import { isEmailSendingEnabled } from "../lib/featureGates";
+import { buildDefaultEmailDraft } from "../lib/emailTemplates";
+import { sendInvoiceEmail } from "../lib/sendInvoiceEmail";
+import SendEmailComposer from "../components/SendEmailComposer";
 
 const styles = `
 .inv-page { box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 2rem; font-family: system-ui, sans-serif; }
@@ -164,6 +168,17 @@ const styles = `
 .preview-body { flex: 1; overflow-y: auto; overflow-x: hidden; background: #f7f7f7; padding: 16px; }
 .preview-page-img { width: 100%; height: auto; display: block; margin: 0 auto 16px; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.08); }
 
+/* Send-email composer view — shares the same modal chrome as the PDF preview above (see previewView state) */
+.preview-primary-btn.send { background: #2a7a50; border-color: #2a7a50; }
+.preview-primary-btn.send:hover { background: #226241; }
+.preview-compose-header { display: flex; align-items: center; gap: 10px; }
+.preview-back-btn {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid #e5e5e5;
+  background: #f5f5f5; color: #333; font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.preview-back-btn:hover { background: #ececec; }
+
 .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 700; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .confirm-modal { width: 100%; max-width: 380px; background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.18); }
 .confirm-title { margin: 0 0 6px; font-size: 1rem; font-weight: 600; color: #111; }
@@ -207,7 +222,7 @@ function showUpgradePrompt() {
 }
 
 export default function Invoices() {
-  const { data, deleteInvoice, convertQuoteToInvoice, isReadOnly } = useApp();
+  const { data, deleteInvoice, convertQuoteToInvoice, isReadOnly, userId } = useApp();
   const navigate = useNavigate();
 
   const [preview, setPreview] = useState(null);
@@ -226,6 +241,18 @@ export default function Invoices() {
   const [convertError, setConvertError] = useState("");
   const [openMenuKey, setOpenMenuKey] = useState(null);
   const [openUpKey, setOpenUpKey] = useState(null);
+
+  // Send-email composer — a second VIEW inside the same preview modal
+  // (toggled via previewView), not a second modal. Reset alongside the rest
+  // of the preview state in openPreview/closePreview below, so nothing here
+  // is ever persisted to the invoice record — it's UI-prototype state only.
+  const [previewView, setPreviewView] = useState("pdf"); // "pdf" | "compose"
+  const [emailDraft, setEmailDraft] = useState(null); // { to, subject, message } | null
+  const [sendState, setSendState] = useState("idle"); // "idle" | "sending" | "sent"
+  const [sendError, setSendError] = useState("");
+
+  // Temporary UI-only gate for the one beta account — see src/lib/featureGates.js.
+  const canSendEmail = isEmailSendingEnabled(userId);
 
   const invoices = useMemo(() => data.invoices || [], [data.invoices]);
 
@@ -286,22 +313,14 @@ export default function Invoices() {
     setPreviewIndex(originalIndex);
     setPdfPages([]);
     setDeleteError("");
+    setPreviewView("pdf");
+    setEmailDraft(null);
+    setSendState("idle");
+    setSendError("");
     setPdfLoading(true);
     try {
-      await loadPdfJs();
       const blob = await generatePdfBlob(invoice);
-      const arrayBuffer = await blob.arrayBuffer();
-      const pdfDoc = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-      const pages = [];
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const viewport = page.getViewport({ scale: 3 });
-        const canvas = document.createElement("canvas");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-        pages.push(canvas.toDataURL("image/png"));
-      }
+      const pages = await renderPdfPagesToImages(blob, 3);
       setPdfPages(pages);
     } catch (e) {
       console.error("PDF preview error:", e);
@@ -314,6 +333,64 @@ export default function Invoices() {
   function closePreview() {
     setPreview(null); setPreviewIndex(null); setPdfPages([]); setPdfLoading(false);
     setConfirmDelete(false); setDeleteError(""); setDeleting(false); setOpenMenuKey(null);
+    // Closing the modal always discards any in-progress email draft — it is
+    // never written to the invoice record, regardless of how far the user
+    // got in composing it.
+    setPreviewView("pdf"); setEmailDraft(null); setSendState("idle"); setSendError("");
+  }
+
+  // Opens the email composer as a second VIEW inside the same modal (see
+  // previewView in the JSX below) rather than a second modal. Defaults are
+  // only computed the first time this preview session enters compose mode,
+  // so toggling back to the PDF view and returning to compose preserves
+  // whatever the user already typed for as long as this modal stays open.
+  function openComposer() {
+    if (!preview) return;
+    closeMenu();
+    setEmailDraft((prev) => prev || buildDefaultEmailDraft(preview, data.settings));
+    setSendState("idle");
+    setSendError("");
+    setPreviewView("compose");
+  }
+
+  function backToPreview() {
+    setPreviewView("pdf");
+  }
+
+  function updateEmailDraftField(field, value) {
+    setEmailDraft((prev) => ({ ...prev, [field]: value }));
+  }
+
+  // Regenerates the PDF via the same generatePdfBlob() used for
+  // download/print (no duplicated PDF logic), then hands it to the
+  // send-invoice-email Edge Function along with the composed recipient/
+  // subject/message. The Edge Function independently re-verifies that this
+  // invoice belongs to the signed-in user before sending anything.
+  async function handleSend() {
+    if (!preview || !emailDraft?.to?.trim()) return;
+    setSendError("");
+    setSendState("sending");
+    try {
+      const blob = await generatePdfBlob(preview);
+      const { error } = await sendInvoiceEmail({
+        invoiceId: preview._id,
+        to: emailDraft.to.trim(),
+        subject: emailDraft.subject,
+        message: emailDraft.message,
+        pdfBlob: blob,
+        filename: `${preview.invoiceNumber || "invoice"}.pdf`,
+      });
+      if (error) {
+        setSendError(error);
+        setSendState("idle");
+        return;
+      }
+      setSendState("sent");
+    } catch (e) {
+      console.error("Send email error:", e);
+      setSendError("Failed to send. Please try again.");
+      setSendState("idle");
+    }
   }
 
   // If isReadOnly, intercept create/edit/convert and show the upgrade prompt instead.
@@ -586,47 +663,81 @@ export default function Invoices() {
       {preview && (
         <div className="preview-overlay" onClick={closePreview}>
           <div className="preview-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="preview-topbar">
-              <div className="preview-topbar-left">
-                <div className="preview-modal-num">{preview.invoiceNumber}</div>
-                <div className="preview-modal-meta">{preview.billToName || "No client"} · {formatDate(preview.date)}</div>
-                {preview.type === "Quote" && preview.convertedToInvoiceId && (<span className="preview-modal-link" onClick={() => jumpToLinked(preview.convertedToInvoiceId)}>→ Converted to {preview.convertedToInvoiceNumber}</span>)}
-                {preview.type !== "Quote" && preview.convertedFromQuoteId && (<span className="preview-modal-link" onClick={() => jumpToLinked(preview.convertedFromQuoteId)}>← From quote {preview.convertedFromQuoteNumber}</span>)}
+            {previewView === "compose" ? (
+              <div className="preview-topbar">
+                <div className="preview-topbar-left preview-compose-header">
+                  <button className="preview-back-btn" onClick={backToPreview} aria-label="Back to preview">←</button>
+                  <div className="preview-modal-num">{preview.type === "Quote" ? "Send Quote" : "Send Invoice"}</div>
+                </div>
+                <div className="preview-topbar-right">
+                  <button className="preview-close" onClick={closePreview} aria-label="Close">✕</button>
+                </div>
               </div>
-              <div className="preview-topbar-right">
-                {preview.type === "Quote" && !preview.convertedToInvoiceId ? (
-                  <button className="preview-primary-btn convert" onClick={() => openConvertConfirm(preview)}>
-                    {isReadOnly ? "→ Convert to invoice" : "→ Convert to invoice"}
-                  </button>
-                ) : (
-                  <button className="preview-primary-btn" onClick={() => downloadPDF(preview)}>↓ Download PDF</button>
-                )}
-                <div className="preview-more-wrap">
-                  <button className={`preview-more-btn${openMenuKey === "previewMenu" ? " open" : ""}`} onClick={(e) => toggleMenu("previewMenu", e)} aria-label="More actions">⋯</button>
-                  <div className={`preview-more-menu${openMenuKey === "previewMenu" ? " show" : ""}`}>
-                    <button className={`more-menu-item${isReadOnly ? " locked-item" : ""}`} onClick={() => goToEdit(preview)}>
-                      <span className="mi-icon">{isReadOnly ? "✎" : "✎"}</span> Edit
+            ) : (
+              <div className="preview-topbar">
+                <div className="preview-topbar-left">
+                  <div className="preview-modal-num">{preview.invoiceNumber}</div>
+                  <div className="preview-modal-meta">{preview.billToName || "No client"} · {formatDate(preview.date)}</div>
+                  {preview.type === "Quote" && preview.convertedToInvoiceId && (<span className="preview-modal-link" onClick={() => jumpToLinked(preview.convertedToInvoiceId)}>→ Converted to {preview.convertedToInvoiceNumber}</span>)}
+                  {preview.type !== "Quote" && preview.convertedFromQuoteId && (<span className="preview-modal-link" onClick={() => jumpToLinked(preview.convertedFromQuoteId)}>← From quote {preview.convertedFromQuoteNumber}</span>)}
+                </div>
+                <div className="preview-topbar-right">
+                  {canSendEmail && (
+                    <button className="preview-primary-btn send" onClick={openComposer}>
+                      ✉ {preview.type === "Quote" ? "Send Quote" : "Send Invoice"}
                     </button>
-                    {(preview.type !== "Quote" || preview.convertedToInvoiceId) && (
-                      <button className="more-menu-item" onClick={() => downloadPDF(preview)}><span className="mi-icon">↓</span> Download PDF</button>
-                    )}
-                    <button className="more-menu-item" onClick={() => printPDF(preview)}><span className="mi-icon">⎙</span> Print</button>
-                    <div className="more-menu-divider" />
-                    <button className="more-menu-item delete-item" onClick={openDeleteConfirm}><span className="mi-icon">✕</span> Delete</button>
+                  )}
+                  {preview.type === "Quote" && !preview.convertedToInvoiceId ? (
+                    <button className="preview-primary-btn convert" onClick={() => openConvertConfirm(preview)}>
+                      {isReadOnly ? "→ Convert to invoice" : "→ Convert to invoice"}
+                    </button>
+                  ) : (
+                    <button className="preview-primary-btn" onClick={() => downloadPDF(preview)}>↓ Download PDF</button>
+                  )}
+                  <div className="preview-more-wrap">
+                    <button className={`preview-more-btn${openMenuKey === "previewMenu" ? " open" : ""}`} onClick={(e) => toggleMenu("previewMenu", e)} aria-label="More actions">⋯</button>
+                    <div className={`preview-more-menu${openMenuKey === "previewMenu" ? " show" : ""}`}>
+                      <button className={`more-menu-item${isReadOnly ? " locked-item" : ""}`} onClick={() => goToEdit(preview)}>
+                        <span className="mi-icon">{isReadOnly ? "✎" : "✎"}</span> Edit
+                      </button>
+                      {(preview.type !== "Quote" || preview.convertedToInvoiceId) && (
+                        <button className="more-menu-item" onClick={() => downloadPDF(preview)}><span className="mi-icon">↓</span> Download PDF</button>
+                      )}
+                      <button className="more-menu-item" onClick={() => printPDF(preview)}><span className="mi-icon">⎙</span> Print</button>
+                      <div className="more-menu-divider" />
+                      <button className="more-menu-item delete-item" onClick={openDeleteConfirm}><span className="mi-icon">✕</span> Delete</button>
+                    </div>
                   </div>
+                  <button className="preview-close" onClick={closePreview} aria-label="Close preview">✕</button>
                 </div>
-                <button className="preview-close" onClick={closePreview} aria-label="Close preview">✕</button>
               </div>
-            </div>
-            <div className="preview-body">
-              {pdfLoading && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: "#aaa", fontSize: "0.875rem", gap: 10, flexDirection: "column" }}>
-                  <div style={{ width: 28, height: 28, border: "3px solid #ebebeb", borderTopColor: "#111", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
-                  Loading preview...
-                </div>
-              )}
-              {!pdfLoading && pdfPages.map((src, i) => (<img key={i} src={src} alt={`Page ${i + 1}`} className="preview-page-img" />))}
-            </div>
+            )}
+
+            {previewView === "compose" ? (
+              <SendEmailComposer
+                invoice={preview}
+                to={emailDraft?.to ?? ""}
+                subject={emailDraft?.subject ?? ""}
+                message={emailDraft?.message ?? ""}
+                onChangeTo={(v) => updateEmailDraftField("to", v)}
+                onChangeSubject={(v) => updateEmailDraftField("subject", v)}
+                onChangeMessage={(v) => updateEmailDraftField("message", v)}
+                sendState={sendState}
+                sendError={sendError}
+                onSend={handleSend}
+                onBack={backToPreview}
+              />
+            ) : (
+              <div className="preview-body">
+                {pdfLoading && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: "#aaa", fontSize: "0.875rem", gap: 10, flexDirection: "column" }}>
+                    <div style={{ width: 28, height: 28, border: "3px solid #ebebeb", borderTopColor: "#111", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                    Loading preview...
+                  </div>
+                )}
+                {!pdfLoading && pdfPages.map((src, i) => (<img key={i} src={src} alt={`Page ${i + 1}`} className="preview-page-img" />))}
+              </div>
+            )}
           </div>
         </div>
       )}

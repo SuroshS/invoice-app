@@ -59,6 +59,7 @@ export function AppProvider({ children }) {
   const [data, setDataState] = useState({
     settings: defaultSettings,
     invoices: [],
+    clients: [],
   });
   const [subscriptionActive, setSubscriptionActive] = useState(false);
 
@@ -67,7 +68,7 @@ export function AppProvider({ children }) {
 
   const resetLocalData = useCallback(() => {
     loadedForUserRef.current = null;
-    setDataState({ settings: defaultSettings, invoices: [] });
+    setDataState({ settings: defaultSettings, invoices: [], clients: [] });
     setDataLoading(false);
     setDataError(null);
     setSubscriptionActive(false);
@@ -82,7 +83,10 @@ export function AppProvider({ children }) {
     // little stale) data instead of empty placeholders.
     const cached = readCache(id);
     if (cached) {
-      setDataState(cached);
+      // Older cached blobs (written before the clients feature existed)
+      // won't have a `clients` key — default it so data.clients is always
+      // an array, never undefined.
+      setDataState({ clients: [], ...cached });
       setSubscriptionActive(cached.settings?.subscriptionActive === true);
       loadedForUserRef.current = id;
       setHasInitialData(true);
@@ -98,13 +102,24 @@ export function AppProvider({ children }) {
       const [
         { data: settingsRow, error: settingsError },
         { data: invoiceRows, error: invoicesError },
+        { data: clientRows, error: clientsError },
       ] = await Promise.all([
         supabase.from("settings").select("data").eq("user_id", id).maybeSingle(),
         supabase.from("invoices").select("data, id, created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(50),
+        // Clients are one row per client (not per invoice), so — unlike
+        // invoices — there's no need to cap this; loading the full roster
+        // up front is what makes the CreateInvoice client picker instant.
+        supabase.from("clients").select("*").eq("user_id", id).order("name"),
       ]);
 
       if (settingsError) throw settingsError;
       if (invoicesError) throw invoicesError;
+      // Not a hard failure like settings/invoices — if the `clients` table
+      // migration hasn't been applied yet (or RLS isn't set up on it), the
+      // rest of the app should still load normally; the client picker and
+      // Clients page just show an empty roster instead of taking the whole
+      // app down.
+      if (clientsError) console.error("Load clients error:", clientsError);
 
       let loadedSettings = settingsRow?.data;
 
@@ -134,6 +149,7 @@ export function AppProvider({ children }) {
       const freshData = {
         settings: loadedSettings,
         invoices: invoiceRows?.map((row) => ({ ...row.data, _id: row.id })) || [],
+        clients: clientRows || [],
       };
 
       setDataState(freshData);
@@ -176,8 +192,27 @@ export function AppProvider({ children }) {
     if (error) { console.error("Settings save error:", error); return { error: "Failed to save settings. Please try again." }; }
     setDataState((prev) => ({ ...prev, settings }));
     setSubscriptionActive(settings.subscriptionActive === true);
-    writeCache(userId, { settings, invoices: data.invoices });
+    writeCache(userId, { settings, invoices: data.invoices, clients: data.clients });
     return { error: null };
+  }
+
+  // Creates a new client record (used by CreateInvoice's "new client" flow)
+  // and adds it to local state/cache so it shows up immediately in the
+  // picker and the Clients page without waiting on a refetch.
+  async function createClient({ name, email, phone, address }) {
+    if (!userId) return { client: null, error: "Not logged in." };
+    const trimmedName = (name || "").trim();
+    if (!trimmedName) return { client: null, error: "Client name is required." };
+    const { data: inserted, error } = await supabase
+      .from("clients")
+      .insert({ user_id: userId, name: trimmedName, email: email || null, phone: phone || null, address: address || null })
+      .select("*")
+      .single();
+    if (error) { console.error("Create client error:", error); return { client: null, error: "Failed to save this client. Please try again." }; }
+    const newClients = [...data.clients, inserted].sort((a, b) => a.name.localeCompare(b.name));
+    setDataState((prev) => ({ ...prev, clients: newClients }));
+    writeCache(userId, { settings: data.settings, invoices: data.invoices, clients: newClients });
+    return { client: inserted, error: null };
   }
 
   async function uploadLogo(file) {
@@ -210,7 +245,7 @@ export function AppProvider({ children }) {
     if (settingsError) console.error("Settings update error:", settingsError);
     const newInvoices = [{ ...invoiceRecord, _id: inserted.id }, ...data.invoices].slice(0, 50);
     setDataState((prev) => ({ ...prev, settings: updatedSettings, invoices: newInvoices }));
-    writeCache(userId, { settings: updatedSettings, invoices: newInvoices });
+    writeCache(userId, { settings: updatedSettings, invoices: newInvoices, clients: data.clients });
     return { error: null, id: inserted.id, invoiceNumber: invoice.invoiceNumber };
   }
 
@@ -226,7 +261,7 @@ export function AppProvider({ children }) {
     if (error) { console.error("Invoice update error:", error); return { error: "Failed to update invoice. Please try again." }; }
     const newInvoices = data.invoices.map((i) => i._id === invoiceDbId ? { ...invoiceRecord, _id: invoiceDbId } : i);
     setDataState((prev) => ({ ...prev, invoices: newInvoices }));
-    writeCache(userId, { settings: data.settings, invoices: newInvoices });
+    writeCache(userId, { settings: data.settings, invoices: newInvoices, clients: data.clients });
     return { error: null, invoiceNumber: invoice.invoiceNumber };
   }
 
@@ -258,7 +293,7 @@ export function AppProvider({ children }) {
       ...data.invoices.map((i) => i._id === quoteDbId ? { ...updatedQuoteRecord, _id: quoteDbId } : i),
     ].slice(0, 50);
     setDataState((prev) => ({ ...prev, settings: updatedSettings, invoices: newInvoices }));
-    writeCache(userId, { settings: updatedSettings, invoices: newInvoices });
+    writeCache(userId, { settings: updatedSettings, invoices: newInvoices, clients: data.clients });
     return { error: null, id: inserted.id, invoiceNumber: newInvoiceNumber };
   }
 
@@ -270,7 +305,7 @@ export function AppProvider({ children }) {
     }
     const newInvoices = data.invoices.filter((_, i) => i !== index);
     setDataState((prev) => ({ ...prev, invoices: newInvoices }));
-    writeCache(userId, { settings: data.settings, invoices: newInvoices });
+    writeCache(userId, { settings: data.settings, invoices: newInvoices, clients: data.clients });
     return { error: null };
   }
 
@@ -284,16 +319,17 @@ export function AppProvider({ children }) {
 
   const value = useMemo(() => ({
     data, setData, saveInvoice, updateInvoice, convertQuoteToInvoice,
-    deleteInvoice, saveSettings, uploadLogo, signOut,
+    deleteInvoice, saveSettings, uploadLogo, createClient, signOut,
     userId, dataLoading, dataError, hasInitialData,
     reloadData: () => userId && loadData(userId),
     isReadOnly, subscriptionActive, trialExpired,
     // saveInvoice/updateInvoice/convertQuoteToInvoice/deleteInvoice/saveSettings/
-    // uploadLogo/signOut are plain functions recreated every render, but they
-    // only close over data/userId/subscriptionActive — all already listed below
-    // — so whenever any of those actually change, this memo recomputes and
-    // picks up fresh references from that same render. Adding the functions
-    // themselves here would defeat the memo (new identity every render).
+    // uploadLogo/createClient/signOut are plain functions recreated every
+    // render, but they only close over data/userId/subscriptionActive — all
+    // already listed below — so whenever any of those actually change, this
+    // memo recomputes and picks up fresh references from that same render.
+    // Adding the functions themselves here would defeat the memo (new
+    // identity every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [data, userId, dataLoading, dataError, hasInitialData, isReadOnly, subscriptionActive, trialExpired, loadData]);
 

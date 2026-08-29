@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Settings = lazy(() => import("./pages/Settings"));
 const CreateInvoice = lazy(() => import("./pages/CreateInvoice"));
 const Invoices = lazy(() => import("./pages/Invoices"));
+const Clients = lazy(() => import("./pages/Clients"));
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/create" element={<CreateInvoice />} />
                 <Route path="/invoices" element={<Invoices />} />
+                <Route path="/clients" element={<Clients />} />
               </Route>
             </Routes>
           </Suspense>

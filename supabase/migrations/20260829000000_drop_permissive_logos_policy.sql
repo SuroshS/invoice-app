@@ -1,0 +1,21 @@
+-- Removes a pre-existing, undocumented permissive policy found on the live
+-- database during a security audit — it was never created by any migration
+-- in this repo, so its origin is unknown (likely a leftover from manual
+-- dashboard configuration predating 20260716000001_storage_logos_rls.sql).
+--
+-- "allow all logos" was: cmd = ALL, roles = {public},
+-- using/with check = (bucket_id = 'logos') — no auth.uid() ownership check
+-- at all. Because Postgres RLS policies are permissive-by-default (OR'd
+-- together), this single policy alone granted SELECT/INSERT/UPDATE/DELETE
+-- on every object in the `logos` bucket to any role, completely defeating
+-- the four correctly-scoped policies added by
+-- 20260716000001_storage_logos_rls.sql (logos_public_read,
+-- logos_insert_own_folder, logos_update_own_folder, logos_delete_own_folder)
+-- which sat right alongside it, live, without ever actually being the sole
+-- gate on write access.
+--
+-- This migration ONLY drops that one policy. It does not touch, redefine,
+-- or re-create any of the four legitimate logos_* policies, and it does not
+-- touch settings/invoices/clients or any function — those were all verified
+-- correct against their own migrations during the same audit.
+drop policy if exists "allow all logos" on storage.objects;

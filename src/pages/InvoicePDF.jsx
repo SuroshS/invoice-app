@@ -66,6 +66,7 @@ export default function InvoicePDF({ invoice, settings, totals }) {
   </View>
 ) : null}
           {invoice.billToEmail ? <Text>{invoice.billToEmail}</Text> : null}
+          {invoice.billToPhone ? <Text>{invoice.billToPhone}</Text> : null}
         </View>
 
         {/* LINE ITEMS */}

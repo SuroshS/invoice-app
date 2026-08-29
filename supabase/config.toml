@@ -31,3 +31,12 @@ verify_jwt = false
 # two siblings above, so deployment doesn't depend on a CLI flag being
 # remembered correctly.
 entrypoint = "./functions/create-portal-session/index.ts"
+
+[functions.send-invoice-email]
+enabled = true
+verify_jwt = false
+# Manually verifies the caller's bearer token itself (same pattern as its
+# siblings above) instead of relying on the platform's JWT check. Imports
+# supabase-js and denomailer via full esm.sh/deno.land URLs directly, so no
+# import map is needed here either.
+entrypoint = "./functions/send-invoice-email/index.ts"

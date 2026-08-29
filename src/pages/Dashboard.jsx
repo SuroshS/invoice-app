@@ -15,6 +15,7 @@ function usePrefetchIdle() {
       import("./Invoices");
       import("./Settings");
       import("./CreateInvoice");
+      import("./Clients");
       loadPdfJs().catch(() => {});
     });
     return () => cancelIdle(id);

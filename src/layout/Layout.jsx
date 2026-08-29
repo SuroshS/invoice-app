@@ -8,6 +8,7 @@ import logo from "../assets/paivlewhite-removebg-preview.png";
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "⊞" },
   { to: "/invoices", label: "Invoices", icon: "≡" },
+  { to: "/clients", label: "Clients", icon: "☺" },
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];
 
