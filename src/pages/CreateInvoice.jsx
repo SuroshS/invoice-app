@@ -1,9 +1,8 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
-import { pdf } from "@react-pdf/renderer";
-import InvoicePDF from "./InvoicePDF";
 import { loadPdfJs, renderPdfPagesToImages } from "../lib/pdfjs";
+import { generateInvoicePdfBlob } from "../lib/pdfEngine";
 
 function buildInvoiceNumber(settings, type) {
   const isQuote = type === "Quote";
@@ -466,7 +465,7 @@ const styles = `
 `;
 
 export default function CreateInvoice() {
-  const { data, saveInvoice, updateInvoice, createClient, isReadOnly } = useApp();
+  const { data, saveInvoice, updateInvoice, createClient, isReadOnly, secondaryDataLoading } = useApp();
   const { settings } = data;
   const location = useLocation();
   const navigate = useNavigate();
@@ -683,7 +682,7 @@ export default function CreateInvoice() {
     setPreviewError("");
 
     try {
-      const blob = await pdf(<InvoicePDF invoice={invoice} settings={settings} totals={totals} />).toBlob();
+      const blob = await generateInvoicePdfBlob(invoice, settings, totals);
       const pages = await renderPdfToImages(blob);
       setPdfPages(pages);
     } catch (e) {
@@ -694,9 +693,14 @@ export default function CreateInvoice() {
     setPdfLoading(false);
   }
 
+  // Deliberately NOT using the pdfCache.js blob cache used by Invoices.jsx/
+  // Clients.jsx — this previews a live-editing draft that can change on
+  // every keystroke, so always regenerating fresh here is correct, not a
+  // bug to fix (unlike those two pages, which preview already-saved,
+  // immutable-until-next-edit records).
   async function generatePdfBlob() {
     const invoice = { ...form, invoiceNumber };
-    const blob = await pdf(<InvoicePDF invoice={invoice} settings={settings} totals={totals} />).toBlob();
+    const blob = await generateInvoicePdfBlob(invoice, settings, totals);
     return { invoice, blob };
   }
 
@@ -932,7 +936,11 @@ export default function CreateInvoice() {
                     <div className="ci-client-dropdown">
                       {matchingClients.length === 0 ? (
                         <div className="ci-client-empty">
-                          {clients.length === 0 ? "No saved clients yet — add one via \"New client\"." : "No matching clients."}
+                          {secondaryDataLoading
+                            ? "Loading clients..."
+                            : clients.length === 0
+                              ? "No saved clients yet — add one via \"New client\"."
+                              : "No matching clients."}
                         </div>
                       ) : (
                         matchingClients.map((c) => (

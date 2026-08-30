@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useApp } from "../context/AppContext";
-import { pdf } from "@react-pdf/renderer";
-import InvoicePDF from "./InvoicePDF";
 import { renderPdfPagesToImages } from "../lib/pdfjs";
-import { fetchClientInvoiceStats, fetchInvoicesForClient } from "../lib/clientStats";
+import { computeClientInvoiceStats, getInvoicesForClient } from "../lib/clientStats";
+import { getInvoicePdfBlob, getInvoicePdfPages } from "../lib/pdfCache";
+import { generateInvoicePdfBlob } from "../lib/pdfEngine";
 
 const styles = `
 .cli-page { box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 2rem; font-family: system-ui, sans-serif; }
@@ -74,52 +74,24 @@ const styles = `
 `;
 
 export default function Clients() {
-  const { data, userId } = useApp();
+  const { data, secondaryDataLoading } = useApp();
   const clients = useMemo(() => data.clients || [], [data.clients]);
+  const invoices = useMemo(() => data.invoices || [], [data.invoices]);
 
-  // Per-client invoiceCount/totalBilled, computed by Postgres (see the
-  // get_client_invoice_stats migration) — a few rows, not every invoice
-  // ever created. Loading every invoice's full record just to show this
-  // summary table was the actual cost; this replaces that entirely rather
-  // than caching around it.
-  const [clientStatsById, setClientStatsById] = useState(new Map());
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  // Per-client invoiceCount/totalBilled — derived synchronously from
+  // AppContext's already-loaded invoices, no network request of its own.
+  // See lib/clientStats.js for why this replaced a separate RPC call.
+  const clientStatsById = useMemo(() => computeClientInvoiceStats(invoices), [invoices]);
+
   const [searchTerm, setSearchTerm] = useState("");
 
   const [openClient, setOpenClient] = useState(null);
   const [openClientInvoices, setOpenClientInvoices] = useState(null);
-  const [openClientInvoicesLoading, setOpenClientInvoicesLoading] = useState(false);
-  const [openClientInvoicesError, setOpenClientInvoicesError] = useState("");
-  const activeClientIdRef = useRef(null);
 
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [previewPages, setPreviewPages] = useState([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
-
-  useEffect(() => {
-    if (!userId) return;
-    let cancelled = false;
-
-    async function loadStats() {
-      setStatsLoading(true);
-      setLoadError("");
-      try {
-        const stats = await fetchClientInvoiceStats();
-        if (cancelled) return;
-        setClientStatsById(stats);
-      } catch (error) {
-        if (cancelled) return;
-        console.error("Load client invoice stats error:", error);
-        setLoadError("Could not load invoice stats for clients.");
-      }
-      if (!cancelled) setStatsLoading(false);
-    }
-
-    loadStats();
-    return () => { cancelled = true; };
-  }, [userId]);
 
   function fmt(n) {
     return (n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -153,47 +125,38 @@ export default function Clients() {
     );
   }, [clientRows, searchTerm]);
 
-  // The client's actual invoice/quote records are only ever needed once
-  // their popup is open, so they're fetched here rather than up front for
-  // every client. activeClientIdRef guards against a stale response landing
-  // after the user has already closed this modal or opened a different one.
-  async function openClientModal(entry) {
-    const clientId = entry.client.id;
-    activeClientIdRef.current = clientId;
+  // The client's invoice/quote records are just a filter over the invoices
+  // already loaded into AppContext — instant, no fetch, no loading state
+  // needed for this step at all.
+  function openClientModal(entry) {
     setOpenClient(entry);
+    setOpenClientInvoices(getInvoicesForClient(invoices, entry.client.id));
     setViewingInvoice(null);
     setPreviewPages([]);
     setPreviewError("");
-    setOpenClientInvoices(null);
-    setOpenClientInvoicesError("");
-    setOpenClientInvoicesLoading(true);
-
-    try {
-      const invoices = await fetchInvoicesForClient(userId, clientId);
-      if (activeClientIdRef.current !== clientId) return;
-      setOpenClientInvoices(invoices);
-    } catch (e) {
-      if (activeClientIdRef.current !== clientId) return;
-      console.error("Load client invoices error:", e);
-      setOpenClientInvoicesError("Could not load this client's invoices.");
-    }
-    if (activeClientIdRef.current === clientId) setOpenClientInvoicesLoading(false);
   }
 
   function closeClientModal() {
-    activeClientIdRef.current = null;
     setOpenClient(null);
     setOpenClientInvoices(null);
-    setOpenClientInvoicesError("");
     setViewingInvoice(null);
     setPreviewPages([]);
     setPreviewError("");
   }
 
+  function invoiceTotals(invoice) {
+    return { subtotal: invoice.subtotal || 0, gst: invoice.gst || 0, total: invoice.total || 0 };
+  }
+
+  // Reuses an already-generated blob/pages for this exact invoice+settings
+  // combination when one exists (see lib/pdfCache.js) — Preview then
+  // Download on the same record no longer re-runs react-pdf's layout engine
+  // twice, and reopening the same invoice's preview skips rasterization too.
+  // generateInvoicePdfBlob dynamically imports react-pdf/InvoicePDF on first
+  // use (see lib/pdfEngine.jsx) rather than this page bundling that engine
+  // just by being navigated to.
   async function generatePdfBlob(invoice) {
-    return await pdf(
-      <InvoicePDF invoice={invoice} settings={data.settings} totals={{ subtotal: invoice.subtotal || 0, gst: invoice.gst || 0, total: invoice.total || 0 }} />
-    ).toBlob();
+    return getInvoicePdfBlob(invoice, data.settings, () => generateInvoicePdfBlob(invoice, data.settings, invoiceTotals(invoice)));
   }
 
   async function openInvoicePreview(invoice) {
@@ -202,8 +165,12 @@ export default function Clients() {
     setPreviewError("");
     setPreviewLoading(true);
     try {
-      const blob = await generatePdfBlob(invoice);
-      const pages = await renderPdfPagesToImages(blob, 3);
+      const pages = await getInvoicePdfPages(
+        invoice,
+        data.settings,
+        () => generateInvoicePdfBlob(invoice, data.settings, invoiceTotals(invoice)),
+        (blob) => renderPdfPagesToImages(blob, 3)
+      );
       setPreviewPages(pages);
     } catch (e) {
       console.error("Client invoice preview error:", e);
@@ -240,18 +207,20 @@ export default function Clients() {
           <input className="cli-search" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name, email or phone..." />
         </div>
 
-        {loadError && <div className="cli-global-error">⚠ {loadError}</div>}
-
         <div className="cli-card">
-          {clients.length === 0 ? (
-            <div className="cli-empty">
-              No clients yet.<br />
-              Clients are added automatically when you create an invoice or quote and choose "New client".
-            </div>
-          ) : statsLoading ? (
+          {secondaryDataLoading ? (
+            // Clients/invoices are still loading in the background (see
+            // AppContext) — without this check, an empty data.clients this
+            // early would incorrectly show "No clients yet" for an account
+            // that actually has clients.
             <div className="cli-loading-wrap">
               <div className="cli-spinner" />
               Loading clients...
+            </div>
+          ) : clients.length === 0 ? (
+            <div className="cli-empty">
+              No clients yet.<br />
+              Clients are added automatically when you create an invoice or quote and choose "New client".
             </div>
           ) : filtered.length === 0 ? (
             <div className="cli-empty">No matching clients.</div>
@@ -337,13 +306,6 @@ export default function Clients() {
                     <img key={i} src={src} alt={`Page ${i + 1}`} className="cli-preview-page-img" />
                   ))}
                 </>
-              ) : openClientInvoicesLoading ? (
-                <div className="cli-loading-wrap">
-                  <div className="cli-spinner" />
-                  Loading invoices...
-                </div>
-              ) : openClientInvoicesError ? (
-                <div className="cli-loading-wrap">⚠ {openClientInvoicesError}</div>
               ) : (openClientInvoices || []).length === 0 ? (
                 <div className="cli-empty">No invoices or quotes for this client yet.</div>
               ) : (

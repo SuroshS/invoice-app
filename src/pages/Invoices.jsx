@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useNavigate } from "react-router-dom";
-import { pdf } from "@react-pdf/renderer";
-import InvoicePDF from "./InvoicePDF";
 import { renderPdfPagesToImages } from "../lib/pdfjs";
 import { isEmailSendingEnabled } from "../lib/featureGates";
 import { buildDefaultEmailDraft } from "../lib/emailTemplates";
 import { sendInvoiceEmail } from "../lib/sendInvoiceEmail";
 import SendEmailComposer from "../components/SendEmailComposer";
+import { getInvoicePdfBlob, getInvoicePdfPages } from "../lib/pdfCache";
+import { generateInvoicePdfBlob } from "../lib/pdfEngine";
 
 const styles = `
 .inv-page { box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 2rem; font-family: system-ui, sans-serif; }
@@ -222,7 +222,7 @@ function showUpgradePrompt() {
 }
 
 export default function Invoices() {
-  const { data, deleteInvoice, convertQuoteToInvoice, isReadOnly, userId } = useApp();
+  const { data, deleteInvoice, convertQuoteToInvoice, isReadOnly, userId, secondaryDataLoading } = useApp();
   const navigate = useNavigate();
 
   const [preview, setPreview] = useState(null);
@@ -301,10 +301,18 @@ export default function Invoices() {
     openPreview(target, invoices.indexOf(target));
   }
 
+  function invoiceTotals(invoice) {
+    return { subtotal: invoice.subtotal || 0, gst: invoice.gst || 0, total: invoice.total || 0 };
+  }
+
+  // Reuses an already-generated blob for this exact invoice+settings
+  // combination when one exists (see lib/pdfCache.js) — Preview, Download,
+  // Print and Send on the same unedited record no longer each independently
+  // re-run react-pdf's layout engine. generateInvoicePdfBlob dynamically
+  // imports react-pdf/InvoicePDF on first use (see lib/pdfEngine.jsx) rather
+  // than this page bundling that ~500KB engine just by being navigated to.
   async function generatePdfBlob(invoice) {
-    return await pdf(
-      <InvoicePDF invoice={invoice} settings={data.settings} totals={{ subtotal: invoice.subtotal || 0, gst: invoice.gst || 0, total: invoice.total || 0 }} />
-    ).toBlob();
+    return getInvoicePdfBlob(invoice, data.settings, () => generateInvoicePdfBlob(invoice, data.settings, invoiceTotals(invoice)));
   }
 
   async function openPreview(invoice, originalIndex) {
@@ -319,8 +327,12 @@ export default function Invoices() {
     setSendError("");
     setPdfLoading(true);
     try {
-      const blob = await generatePdfBlob(invoice);
-      const pages = await renderPdfPagesToImages(blob, 3);
+      const pages = await getInvoicePdfPages(
+        invoice,
+        data.settings,
+        () => generateInvoicePdfBlob(invoice, data.settings, invoiceTotals(invoice)),
+        (blob) => renderPdfPagesToImages(blob, 3)
+      );
       setPdfPages(pages);
     } catch (e) {
       console.error("PDF preview error:", e);
@@ -533,7 +545,16 @@ export default function Invoices() {
         </div>
 
         <div className="inv-card">
-          {invoices.length === 0 ? (
+          {secondaryDataLoading ? (
+            // Settings alone unblocks the app shell (see AppContext) — this
+            // page's actual content can still be loading. Without this
+            // check, an empty data.invoices this early would incorrectly
+            // show "No invoices or quotes yet" for an account that has some.
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "#aaa", fontSize: "0.875rem", gap: 10, flexDirection: "column" }}>
+              <div style={{ width: 28, height: 28, border: "3px solid #ebebeb", borderTopColor: "#111", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+              Loading invoices...
+            </div>
+          ) : invoices.length === 0 ? (
             <div className="inv-empty">No invoices or quotes yet.</div>
           ) : filtered.length === 0 ? (
             <div className="inv-empty">No matching records found.</div>

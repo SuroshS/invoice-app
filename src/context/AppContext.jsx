@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { supabase } from "../lib/supabase";
 import { useAppInit } from "./AppInitProvider";
 import { CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION } from "../lib/policyVersions";
+import { clearInvoicePdfCache } from "../lib/pdfCache";
 
 const AppContext = createContext();
 
@@ -62,20 +63,46 @@ export function AppProvider({ children }) {
     clients: [],
   });
   const [subscriptionActive, setSubscriptionActive] = useState(false);
+  // True while invoices/clients are still being fetched — settings alone is
+  // enough to mark hasInitialData true and unblock the authenticated app
+  // shell (see loadData below), so pages that actually need invoices/clients
+  // (Dashboard, Invoices, Clients, CreateInvoice's client picker) check this
+  // to show their own lightweight loading state instead of the app waiting
+  // on it as a whole.
+  const [secondaryDataLoading, setSecondaryDataLoading] = useState(true);
 
   const loadedForUserRef = useRef(null);
+  // Bumped every time a load is claimed; a load's own response is only
+  // applied if this still matches the token it captured when it started —
+  // this is what stops a slow, superseded request (e.g. from a fast
+  // logout/login as a different user) from resolving late and overwriting
+  // newer state with stale data. See loadData below.
+  const loadTokenRef = useRef(0);
   const isReadOnly = trialExpired && !subscriptionActive;
 
   const resetLocalData = useCallback(() => {
     loadedForUserRef.current = null;
+    loadTokenRef.current += 1;
+    clearInvoicePdfCache();
     setDataState({ settings: defaultSettings, invoices: [], clients: [] });
     setDataLoading(false);
     setDataError(null);
     setSubscriptionActive(false);
     setHasInitialData(false);
+    setSecondaryDataLoading(true);
   }, []);
 
   const loadData = useCallback(async (id) => {
+    // Claim this load IMMEDIATELY, before any await — not after it resolves.
+    // Previously loadedForUserRef was only set once the fetch completed,
+    // which left a window where a re-entrant call for the same user (e.g.
+    // React 18 StrictMode's dev-only double-invoke, or a rapid repeat auth
+    // event) could start a second, fully overlapping fetch. Claiming the
+    // token up front also lets a later loadData call for a different user
+    // invalidate this one's eventual response (see the token checks below).
+    loadedForUserRef.current = id;
+    const myToken = ++loadTokenRef.current;
+
     // Load this specific user's cached data instantly — completely safe because
     // the cache key includes the user ID so it can never return another user's
     // data. This alone is enough to mark startup data as "ready": AuthGate can
@@ -88,40 +115,38 @@ export function AppProvider({ children }) {
       // an array, never undefined.
       setDataState({ clients: [], ...cached });
       setSubscriptionActive(cached.settings?.subscriptionActive === true);
-      loadedForUserRef.current = id;
       setHasInitialData(true);
+      setSecondaryDataLoading(false);
+    } else {
+      setSecondaryDataLoading(true);
     }
 
-    // Always fetch fresh from Supabase — cache is only for the instant first
-    // paint, this keeps it correct in the background (or, if there was no
-    // cache, this is what startup is actually waiting on).
     setDataLoading(true);
     setDataError(null);
 
+    // Fire all three immediately — they're still genuinely parallel at the
+    // network level — but only AWAIT settings before unblocking the app
+    // shell. Settings is the only one of the three that's actually needed
+    // to decide what to render (new-user welcome screen vs. real dashboard,
+    // and isReadOnly's subscriptionActive check, which every protected page
+    // consults). Invoices/clients are page content, not shell prerequisites
+    // — gating hasInitialData on whichever of the three happened to be
+    // slowest was making every cache-miss login wait for all of them before
+    // showing anything at all, when only one of them actually had to block.
+    const settingsPromise = supabase.from("settings").select("data").eq("user_id", id).maybeSingle();
+    const invoicesPromise = supabase.from("invoices").select("data, id, created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(50);
+    // Clients are one row per client (not per invoice), so — unlike
+    // invoices — there's no need to cap this; loading the full roster up
+    // front is what makes the CreateInvoice client picker instant. Narrowed
+    // to the columns actually used client-side (not `*`).
+    const clientsPromise = supabase.from("clients").select("id, name, email, phone, address").eq("user_id", id).order("name");
+
+    let loadedSettings;
     try {
-      const [
-        { data: settingsRow, error: settingsError },
-        { data: invoiceRows, error: invoicesError },
-        { data: clientRows, error: clientsError },
-      ] = await Promise.all([
-        supabase.from("settings").select("data").eq("user_id", id).maybeSingle(),
-        supabase.from("invoices").select("data, id, created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(50),
-        // Clients are one row per client (not per invoice), so — unlike
-        // invoices — there's no need to cap this; loading the full roster
-        // up front is what makes the CreateInvoice client picker instant.
-        supabase.from("clients").select("*").eq("user_id", id).order("name"),
-      ]);
-
+      const { data: settingsRow, error: settingsError } = await settingsPromise;
       if (settingsError) throw settingsError;
-      if (invoicesError) throw invoicesError;
-      // Not a hard failure like settings/invoices — if the `clients` table
-      // migration hasn't been applied yet (or RLS isn't set up on it), the
-      // rest of the app should still load normally; the client picker and
-      // Clients page just show an empty roster instead of taking the whole
-      // app down.
-      if (clientsError) console.error("Load clients error:", clientsError);
 
-      let loadedSettings = settingsRow?.data;
+      loadedSettings = settingsRow?.data;
 
       if (!loadedSettings) {
         // No settings row exists yet — this is this user's first ever
@@ -144,26 +169,55 @@ export function AppProvider({ children }) {
         if (seedError) console.error("Failed to create initial settings row:", seedError);
       }
 
+      // A newer load has since been claimed (different user, or an explicit
+      // reload) — this response is stale; applying it now would overwrite
+      // more recent state with older data, so it's discarded instead.
+      if (loadTokenRef.current !== myToken) return;
+
       setSubscriptionActive(loadedSettings.subscriptionActive === true);
-
-      const freshData = {
-        settings: loadedSettings,
-        invoices: invoiceRows?.map((row) => ({ ...row.data, _id: row.id })) || [],
-        clients: clientRows || [],
-      };
-
-      setDataState(freshData);
-      writeCache(id, freshData);
-      loadedForUserRef.current = id;
+      setDataState((prev) => ({ ...prev, settings: loadedSettings }));
       setHasInitialData(true);
+      setDataLoading(false);
     } catch (error) {
-      console.error("Load data error:", error);
+      console.error("Load settings error:", error);
+      if (loadTokenRef.current !== myToken) return;
       // Only a hard failure if there's no cache to fall back on — if cached
       // data is already showing, this is a silent background-refresh failure,
       // not something that should interrupt the user.
       if (!cached) setDataError("Failed to load your account data.");
-    } finally {
       setDataLoading(false);
+      return;
+    }
+
+    // The app shell is already usable at this point — invoices/clients now
+    // resolve in the background. Whichever page actually needs them
+    // (Dashboard, Invoices, Clients, CreateInvoice) reads
+    // secondaryDataLoading to show its own lightweight loading state rather
+    // than the whole app having waited on this.
+    try {
+      const [
+        { data: invoiceRows, error: invoicesError },
+        { data: clientRows, error: clientsError },
+      ] = await Promise.all([invoicesPromise, clientsPromise]);
+
+      if (loadTokenRef.current !== myToken) return;
+
+      // Neither is a hard failure now that the app shell is already up —
+      // if the invoices/clients tables/RLS aren't reachable for some
+      // reason, the affected pages show an empty state rather than the
+      // whole app being taken down after settings already loaded fine.
+      if (invoicesError) console.error("Load invoices error:", invoicesError);
+      if (clientsError) console.error("Load clients error:", clientsError);
+
+      const invoices = invoiceRows?.map((row) => ({ ...row.data, _id: row.id })) || [];
+      const clients = clientRows || [];
+
+      setDataState((prev) => ({ ...prev, invoices, clients }));
+      writeCache(id, { settings: loadedSettings, invoices, clients });
+    } catch (error) {
+      console.error("Load invoices/clients error:", error);
+    } finally {
+      if (loadTokenRef.current === myToken) setSecondaryDataLoading(false);
     }
   }, [user]);
 
@@ -320,7 +374,7 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     data, setData, saveInvoice, updateInvoice, convertQuoteToInvoice,
     deleteInvoice, saveSettings, uploadLogo, createClient, signOut,
-    userId, dataLoading, dataError, hasInitialData,
+    userId, dataLoading, dataError, hasInitialData, secondaryDataLoading,
     reloadData: () => userId && loadData(userId),
     isReadOnly, subscriptionActive, trialExpired,
     // saveInvoice/updateInvoice/convertQuoteToInvoice/deleteInvoice/saveSettings/
@@ -331,7 +385,7 @@ export function AppProvider({ children }) {
     // Adding the functions themselves here would defeat the memo (new
     // identity every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [data, userId, dataLoading, dataError, hasInitialData, isReadOnly, subscriptionActive, trialExpired, loadData]);
+  }), [data, userId, dataLoading, dataError, hasInitialData, secondaryDataLoading, isReadOnly, subscriptionActive, trialExpired, loadData]);
 
   return (
     <AppContext.Provider value={value}>

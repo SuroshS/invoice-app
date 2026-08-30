@@ -2,11 +2,16 @@ import { useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { loadPdfJs } from "../lib/pdfjs";
+import { prefetchPdfEngine } from "../lib/pdfEngine";
 import logo from "../assets/paivleblack.png";
 
-// Once the dashboard is idle, warm up the other routes' JS chunks and the
-// pdf.js CDN script so navigating to them / opening a preview feels instant
-// instead of paying a fresh network fetch on first use.
+// Once the dashboard is idle, warm up the other routes' JS chunks, the
+// pdf.js CDN script, and the react-pdf/InvoicePDF engine, so navigating to
+// them / opening a preview feels instant instead of paying a fresh network
+// fetch on first use. The PDF engine itself is no longer a static import of
+// those page chunks (see lib/pdfEngine.jsx) specifically so this idle
+// prefetch — not simply visiting the page — is what decides when its
+// ~500KB weight actually gets downloaded.
 function usePrefetchIdle() {
   useEffect(() => {
     const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1500));
@@ -17,6 +22,7 @@ function usePrefetchIdle() {
       import("./CreateInvoice");
       import("./Clients");
       loadPdfJs().catch(() => {});
+      prefetchPdfEngine();
     });
     return () => cancelIdle(id);
   }, []);
@@ -715,7 +721,7 @@ const styles = `
 `;
 
 export default function Dashboard() {
-  const { data } = useApp();
+  const { data, secondaryDataLoading } = useApp();
   const navigate = useNavigate();
   const { invoices } = data;
 
@@ -881,6 +887,26 @@ export default function Dashboard() {
             </p>
           </div>
         </div>
+      </>
+    );
+  }
+
+  // Settings alone is enough to render the shell (see AppContext) — an
+  // existing user's invoices/clients can still be loading in the
+  // background at this point. Without this check, stats would briefly
+  // compute from an empty/stale invoices array and look like real (wrong)
+  // numbers instead of a loading state.
+  if (secondaryDataLoading) {
+    return (
+      <>
+        <style>{styles}</style>
+        <div className="dash">
+          <div className="welcome-wrap" style={{ minHeight: "40vh" }}>
+            <div style={{ width: 28, height: 28, border: "3px solid #ebebeb", borderTopColor: "#111", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+            <p style={{ marginTop: 16 }}>Loading your dashboard...</p>
+          </div>
+        </div>
+        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
       </>
     );
   }
