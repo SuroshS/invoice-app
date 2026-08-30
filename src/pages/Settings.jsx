@@ -237,7 +237,7 @@ function Field({ label, children }) {
 }
 
 export default function Settings() {
-  const { data, setData, saveSettings, uploadLogo } = useApp();
+  const { data, saveSettings, uploadLogo } = useApp();
 
   const [logoUploading, setLogoUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -250,14 +250,21 @@ export default function Settings() {
   const [termsOpen, setTermsOpen] = useState(false);
   const [termsTab, setTermsTab] = useState("invoice"); // "invoice" | "quote"
 
-  const settings = data?.settings || {};
+  // Local draft, seeded from AppContext.data.settings on mount — same
+  // pattern CreateInvoice.jsx already uses for its own form. Previously
+  // every keystroke on every field called AppContext's generic setData(),
+  // pushing a brand-new `data` object into the global context on every
+  // character typed — which re-rendered every other useApp() consumer
+  // mounted alongside this page (Layout's sidebar, AuthGate) on every
+  // keystroke, for a value nothing outside this page needs until Save is
+  // actually clicked. Editing a local copy and only committing to
+  // AppContext via saveSettings() removes that per-keystroke global
+  // re-render entirely.
+  const [settings, setSettings] = useState(() => data?.settings || {});
 
   function update(field, value) {
     setSaveError("");
-    setData(prev => ({
-      ...prev,
-      settings: { ...prev.settings, [field]: value },
-    }));
+    setSettings(prev => ({ ...prev, [field]: value }));
   }
 
   async function handleLogoUpload(e) {
